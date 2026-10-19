@@ -1,37 +1,27 @@
 # tauri-plugin-better-auth
 
-[Better Auth](https://better-auth.com) for [Tauri 2](https://tauri.app) desktop
-apps. The user signs in through the system browser with PKCE. The session lives
-in Rust, in the OS keychain, and webview code never sees a token.
+### Browser sign-in. Rust-held sessions. A token-free webview.
 
-- **Any sign-in method.** Email codes, passwords, social login, passkeys and
-  2FA all run on your own web page, in a real browser.
-- **No token in the webview.** The session is stored by the Rust plugin. Webview
-  code reaches your auth server and API through `tauriFetch`, a bridge that adds
-  the bearer token in Rust.
-- **Works across domains.** The hand-off page can live on `example.com` while
-  Better Auth runs on `api.example.com`.
-- **Three ways back to the app:**
-  - a custom-scheme deep link (the default)
-  - a loopback redirect to `127.0.0.1`, which makes `tauri dev` work
-  - a pasted code, as the last resort
-- **Desktop:** macOS, Windows and Linux. Mobile is planned for 0.2.
+Bring [Better Auth](https://better-auth.com) to your [Tauri 2](https://tauri.app)
+desktop app. Users sign in on your website through the system browser; the Rust
+plugin stores their session in the OS keychain and authenticates API requests.
 
-It is two halves of one protocol. One version number covers both:
+[Get started](#setup) · [Run the example](examples/basic/README.md) ·
+[Configuration](#configuration-reference) · [Security](SECURITY.md)
 
-| Package                          | What it is                                                                                                            |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| npm `tauri-plugin-better-auth`   | Better Auth **server plugin** `tauri()`, **hand-off page client** (`/proxy`) and **Tauri webview client** (`/client`) |
-| crate `tauri-plugin-better-auth` | The **Tauri plugin**: PKCE, deep links and loopback, code exchange, session storage, the request bridge               |
+| Your users get                                                                     | Your app gets                                                                 |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Your existing sign-in page: passwords, email codes, social login, passkeys and 2FA | A session managed in Rust, with no token exposed to webview code              |
+| A return to the app by deep link, local redirect or pasted code                    | A request bridge that adds the bearer token in Rust                           |
+| Support for macOS, Windows and Linux                                               | Separate website and API domains, such as `example.com` and `api.example.com` |
 
-## Contents
+> **Desktop support:** macOS, Windows and Linux. Mobile is planned for 0.2.
+
+## On this page
 
 - [How it works](#how-it-works)
 - [Requirements](#requirements)
-- [Setup](#setup)
-  - [1. Server](#1-server)
-  - [2. Hand-off page](#2-hand-off-page)
-  - [3. Tauri app](#3-tauri-app)
+- [Setup](#setup): server → hand-off page → Tauri app
 - [Using it in the webview](#using-it-in-the-webview)
 - [The auth bridge](#the-auth-bridge)
 - [Transports](#transports)
@@ -44,24 +34,28 @@ It is two halves of one protocol. One version number covers both:
 
 ## How it works
 
+```mermaid
+sequenceDiagram
+    participant App as Tauri app (Rust)
+    participant Browser as Your sign-in page
+    participant Server as Better Auth server
+    App->>Browser: Open page with state + PKCE challenge
+    Browser->>Browser: Sign in and click Continue
+    Browser->>Server: Authorize the app
+    Server-->>Browser: Single-use code
+    Browser-->>App: Return code + state
+    App->>Server: Exchange code + PKCE verifier
+    Server-->>App: New app session
+    App->>App: Store session in OS keychain
 ```
-Tauri app (Rust)                    Browser: your hand-off page          Better Auth server
-─────────────────                   ───────────────────────────          ──────────────────
-requestAuth()
- state + PKCE verifier (memory only)
- opens /desktop?client_id&state&code_challenge ─►
-                                    user signs in (any method)
-                                    "Continue to <App> as alice@…"
-                                    POST /tauri/authorize ─────────────► single-use code bound to
-                                    ◄─ { code } ◄────────────────────── user + state + challenge
- ◄── <scheme>://auth/callback?code&state   (or http://127.0.0.1:<port>/…, or paste)
- matches the state, then POST /tauri/token { code, state, verifier } ──► checks state + PKCE,
-                                                                          creates a new session
- ◄── { token, user } ◄──────────────────────────────────────────────────
- verifies, stores the token in the keychain, emits `authenticated`
 
-Webview: authClient / your API client ── tauriFetch ──► Rust bridge (+ Bearer) ──► server
-```
+1. **Sign in in the browser.** The app opens your hand-off page, where users
+   sign in and explicitly choose to continue to the app.
+2. **Return to the app.** A deep link, loopback redirect or pasted code carries
+   a single-use authorization code back to Rust.
+3. **Keep the session in Rust.** The plugin exchanges the code using PKCE,
+   stores the session and emits `authenticated`. Webview requests use
+   `tauriFetch`, which adds the bearer token in Rust.
 
 - The browser session and the app session are separate: the app gets its own
   session, created in its own request. Server hooks see the app's headers, such
@@ -80,6 +74,27 @@ Exact formats are in [PROTOCOL.md](PROTOCOL.md).
 - **Rust** 1.88+ and **Node.js** 22+ (or Bun).
 
 ## Setup
+
+You will configure three parts: your Better Auth server, a browser page that
+returns users to the app, and the Tauri app itself. The npm package and Rust
+crate are released together; use matching versions.
+
+| Component             | Package / import                  |
+| --------------------- | --------------------------------- |
+| Better Auth server    | `tauri-plugin-better-auth`        |
+| Browser hand-off page | `tauri-plugin-better-auth/proxy`  |
+| Tauri webview         | `tauri-plugin-better-auth/client` |
+| Tauri Rust backend    | crate `tauri-plugin-better-auth`  |
+
+Install the npm package wherever you use the server, proxy or webview client:
+
+```sh
+npm install tauri-plugin-better-auth
+```
+
+> **Keep these values aligned:** use `com.example.app` as the client ID in all
+> three parts below. The scheme must also match the deep-link registration.
+> Replace the example domains with your own.
 
 ### 1. Server
 
@@ -107,6 +122,9 @@ Better Auth's `verification` table:
 - `POST /tauri/authorize` mints a single-use code for the signed-in user.
 - `POST /tauri/token` exchanges that code for a new session.
 
+<details>
+<summary>Optional: reject or tag app sessions with server hooks</summary>
+
 **Rejecting or tagging app sessions.** The session is created inside the
 `/tauri/token` request, so your session hooks see the app's headers:
 
@@ -130,6 +148,8 @@ databaseHooks: {
 - **Throwing an `APIError`:** the app receives your code, and no session is
   created.
 - **Returning `false`:** the app receives `SESSION_REJECTED`.
+
+</details>
 
 ### 2. Hand-off page
 
@@ -395,9 +415,12 @@ the whole callback link.
 
 ## Configuration reference
 
+<details>
+<summary>Server, hand-off page and Rust options</summary>
+
 ### Server: `tauri(options)`
 
-| Option             | Default                   |                                                                                        |
+| Option             | Default                   | Description                                                                            |
 | ------------------ | ------------------------- | -------------------------------------------------------------------------------------- |
 | `clientID`         | `"tauri"`                 | Must match the app and the hand-off page                                               |
 | `codeExpiresIn`    | `300`                     | Seconds, 30–3600                                                                       |
@@ -406,7 +429,7 @@ the whole callback link.
 
 ### Hand-off page: `tauriProxyClient(options)`
 
-| Option         | Default            |                                                                           |
+| Option         | Default            | Description                                                               |
 | -------------- | ------------------ | ------------------------------------------------------------------------- |
 | `scheme`       | required           | The app's scheme                                                          |
 | `clientID`     | `"tauri"`          |                                                                           |
@@ -422,7 +445,7 @@ the whole callback link.
 
 ### Rust: `tauri_plugin_better_auth::Builder`
 
-| Method                           | Default                  |                                                              |
+| Method                           | Default                  | Description                                                  |
 | -------------------------------- | ------------------------ | ------------------------------------------------------------ |
 | `base_url(url)`                  | required                 | Better Auth base URL. https, or http on localhost only.      |
 | `sign_in_url(url)`               | required                 | The hand-off page                                            |
@@ -448,7 +471,12 @@ is for your own Rust HTTP calls; never send it to the webview.
 **Features:** `keyring` is on by default and provides the OS credential store.
 Disable it and pass your own `store()` to avoid the dependency.
 
+</details>
+
 ## Error codes
+
+<details>
+<summary>Rust and server error codes</summary>
 
 Errors are `{ code, message }`. `TauriAuthError` in JS carries the `code`. Match on
 the code, never on the message.
@@ -472,20 +500,22 @@ the code, never on the message.
 
 **From the server** (also passed through to the app):
 
-| Code                       |     |
-| -------------------------- | --- |
-| `INVALID_CLIENT_ID`        |     |
-| `ORIGIN_NOT_ALLOWED`       |     |
-| `INVALID_STATE`            |     |
-| `INVALID_CODE_CHALLENGE`   |     |
-| `INVALID_CODE_VERIFIER`    |     |
-| `INVALID_OR_EXPIRED_CODE`  |     |
-| `STATE_MISMATCH`           |     |
-| `PKCE_VERIFICATION_FAILED` |     |
-| `USER_NOT_FOUND`           |     |
-| `SESSION_REJECTED`         |     |
+| Code                       |
+| -------------------------- |
+| `INVALID_CLIENT_ID`        |
+| `ORIGIN_NOT_ALLOWED`       |
+| `INVALID_STATE`            |
+| `INVALID_CODE_CHALLENGE`   |
+| `INVALID_CODE_VERIFIER`    |
+| `INVALID_OR_EXPIRED_CODE`  |
+| `STATE_MISMATCH`           |
+| `PKCE_VERIFICATION_FAILED` |
+| `USER_NOT_FOUND`           |
+| `SESSION_REJECTED`         |
 
 **Your hooks' own codes** (e.g. `DEVICE_LIMIT_REACHED`) arrive unchanged.
+
+</details>
 
 ## Platform notes
 
@@ -533,8 +563,6 @@ the code, never on the message.
 
 ## Security
 
-The short version:
-
 - PKCE S256, single-use 5-minute codes, constant-time comparisons.
 - The authorizing browser session is checked against the database, bypassing
   `cookieCache`.
@@ -573,7 +601,7 @@ context.
 ## Example
 
 [`examples/basic`](examples/basic) contains a Bun + Better Auth server with a
-hand-off page and a Tauri app using every feature. See its README.
+hand-off page and a Tauri app using every feature. Follow the [example setup instructions](examples/basic/README.md) to run it locally.
 
 ## Versioning
 
