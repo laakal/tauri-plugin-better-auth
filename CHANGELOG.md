@@ -7,6 +7,10 @@ Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
 First release. Protocol v1.
 
+- `Transport::Auto` on macOS treats an `.app` under a cargo `target/` directory
+  as a dev build and uses the loopback redirect (deep links only reach bundles
+  macOS has registered).
+
 **Server** (`tauri()`):
 - `POST /tauri/authorize`: a database-checked session, an origin allowlist,
   single-use codes bound to PKCE S256.
