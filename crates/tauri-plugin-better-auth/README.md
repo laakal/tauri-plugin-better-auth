@@ -1,6 +1,6 @@
 # tauri-plugin-better-auth
 
-[Better Auth](https://better-auth.com) for [Tauri 2](https://tauri.app) desktop
+[Better Auth](https://better-auth.com) for [Tauri 3](https://tauri.app) desktop
 apps. Users sign in through the system browser with PKCE. The session lives in
 Rust (in the OS keychain), and the webview never sees a token.
 
@@ -12,6 +12,8 @@ client. Full setup:
 
 ```rust
 tauri::Builder::default()
+    // Tauri 3: pick a runtime (`tauri_runtime_cef::Cef` works too).
+    .runtime(tauri_runtime_wry::Wry::default())
     // Windows/Linux: register tauri-plugin-single-instance (with `deep-link`) first.
     .plugin(tauri_plugin_deep_link::init())
     .plugin(
@@ -39,5 +41,5 @@ tauri::Builder::default()
 - **Rust API:** `app.better_auth()` gives `request_auth`, `authenticate`,
   `session`, `sign_out` and `bearer_token`.
 
-**Requirements:** Tauri 2.11+, Rust 1.88+. Desktop: macOS, Windows, Linux. MIT
-licensed.
+**Requirements:** Tauri 3 (alpha.5+), wry or CEF runtime, Rust 1.95+. Desktop:
+macOS, Windows, Linux. For Tauri 2, use `0.1.x`. MIT licensed.

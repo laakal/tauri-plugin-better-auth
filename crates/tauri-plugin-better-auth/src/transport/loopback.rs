@@ -10,26 +10,26 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 
 use http_body_util::Full;
 use hyper::{
+    Method, Request, Response, StatusCode,
     body::{Bytes, Incoming},
-    header::{HeaderValue, CACHE_CONTROL, CONTENT_TYPE, HOST},
+    header::{CACHE_CONTROL, CONTENT_TYPE, HOST, HeaderValue},
     server::conn::http1,
     service::service_fn,
-    Method, Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
 use tokio::{net::TcpListener, sync::Notify};
 
 use crate::{
-    callback::{parse_query, Callback, CallbackOutcome},
     Error, Result,
+    callback::{Callback, CallbackOutcome, parse_query},
 };
 
 /// Claims a callback; `true` closes the listener.

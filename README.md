@@ -2,7 +2,7 @@
 
 ### Browser sign-in. Rust-held sessions. A token-free webview.
 
-Bring [Better Auth](https://better-auth.com) to your [Tauri 2](https://tauri.app)
+Bring [Better Auth](https://better-auth.com) to your [Tauri 3](https://tauri.app)
 desktop app. Users sign in on your website through the system browser; the Rust
 plugin stores their session in the OS keychain and authenticates API requests.
 
@@ -68,10 +68,36 @@ Exact formats are in [PROTOCOL.md](PROTOCOL.md).
 ## Requirements
 
 - **Better Auth** `>= 1.7.4`, with the `bearer()` plugin enabled on the server.
-- **Tauri** `>= 2.11`, with `tauri-plugin-deep-link` for deep links. On Windows
-  and Linux you also need `tauri-plugin-single-instance` with its `deep-link`
-  feature.
-- **Rust** 1.88+ and **Node.js** 22+ (or Bun).
+- **Tauri** `3.0.0-alpha.5` or newer, with `tauri-plugin-deep-link` for deep
+  links. On Windows and Linux you also need `tauri-plugin-single-instance` with
+  its `deep-link` feature. For **Tauri 2**, use the `0.1.x` releases.
+- **Rust** 1.95+ (Tauri 3's minimum) and **Node.js** 22+ (or Bun).
+
+## Tauri 3 and CEF
+
+This release line (`0.2.x`) targets **Tauri 3** (alpha). For Tauri 2, use `0.1.x`.
+
+Tauri 3 makes the webview runtime an explicit choice, and the plugin works with both:
+
+```rust
+tauri::Builder::default()
+    .runtime(tauri_runtime_wry::Wry::default()) // system webview
+    // or: .runtime(tauri_runtime_cef::Cef::default()) // Chromium (CEF)
+```
+
+With the **CEF** runtime:
+
+- The frontend origin is `http://tauri.localhost` on every OS, and IPC is
+  `http://ipc.localhost`. Your CSP needs `ipc: http://ipc.localhost` in
+  `connect-src`, as with wry on Windows. The webview never calls your API
+  directly anyway: `tauriFetch` goes through Rust.
+- Deep links to a running app arrive through Chromium's process singleton; the
+  runtime re-emits them, and `tauri-plugin-deep-link` delivers them as usual.
+  Keep `tauri-plugin-single-instance` registered: a duplicate delivery is
+  ignored, because a callback can only be claimed once.
+- On macOS, `tauri dev` runs a dev `.app` bundle under `target/`, which macOS
+  never registers for your scheme. `Transport::Auto` recognises it and uses the
+  loopback redirect, as it does for wry's bare dev binary.
 
 ## Setup
 
@@ -214,17 +240,18 @@ if (cancelUrl) authClient.tauri.openApp(cancelUrl);
 
 ```toml
 [dependencies]
-tauri-plugin-better-auth = "0.1"
-tauri-plugin-deep-link = "2"
+tauri-plugin-better-auth = "0.2.0-alpha.0"
+tauri-plugin-deep-link = "3.0.0-alpha.3"
+tauri-runtime-wry = "3.0.0-alpha.5" # or tauri-runtime-cef, see "Tauri 3 and CEF"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
-tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-single-instance = { version = "3.0.0-alpha.3", features = ["deep-link"] }
 ```
 
 ```rust
 // src-tauri/src/lib.rs
 pub fn run() {
-    let mut builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default().runtime(tauri_runtime_wry::Wry::default());
     #[cfg(desktop)]
     {
         // First: forwards deep links to the running app on Windows/Linux.

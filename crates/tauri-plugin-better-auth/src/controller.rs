@@ -22,17 +22,17 @@ use tokio::sync::Mutex;
 use url::Url;
 
 use crate::{
-    callback::{parse_deep_link, parse_pasted, Callback, CallbackOutcome, Pasted},
+    Error, Result,
+    callback::{Callback, CallbackOutcome, Pasted, parse_deep_link, parse_pasted},
     config::{Config, Transport},
     http::{HttpApi, SessionCheck, SessionData},
     models::{RequestAuthOptions, RequestAuthResult, SessionSnapshot, SignOutReason},
     pkce::{constant_time_eq, generate_pkce, generate_state},
     store::{
-        profile::{ProfileStore, StoredProfile},
         SessionStore, StoreError, StoredSecret,
+        profile::{ProfileStore, StoredProfile},
     },
     transport::{auto_transport, loopback::LoopbackServer},
-    Error, Result,
 };
 
 /// Best-effort server calls (revoking a superseded session) get this long.
@@ -242,10 +242,10 @@ impl Controller {
         self: &Arc<Self>,
         options: RequestAuthOptions,
     ) -> Result<RequestAuthResult> {
-        if let Some(provider) = &options.provider {
-            if !valid_provider(provider) {
-                return Err(Error::InvalidRequest("invalid provider id".into()));
-            }
+        if let Some(provider) = &options.provider
+            && !valid_provider(provider)
+        {
+            return Err(Error::InvalidRequest("invalid provider id".into()));
         }
         let transport = match options.transport.unwrap_or(self.config.transport) {
             Transport::Auto => auto_transport(self.deep_links_deliverable),
@@ -413,10 +413,9 @@ impl Controller {
         if let Err(error) = self
             .finish(generation, state, verifier, callback.outcome)
             .await
+            && !matches!(error, Error::Superseded)
         {
-            if !matches!(error, Error::Superseded) {
-                self.events.error(&error);
-            }
+            self.events.error(&error);
         }
     }
 
@@ -439,10 +438,9 @@ impl Controller {
             if let Err(error) = controller
                 .finish(generation, state, verifier, callback.outcome)
                 .await
+                && !matches!(error, Error::Superseded)
             {
-                if !matches!(error, Error::Superseded) {
-                    controller.events.error(&error);
-                }
+                controller.events.error(&error);
             }
         });
         true
@@ -529,10 +527,10 @@ impl Controller {
         drop(inner);
 
         // 3. Only now revoke the session it replaced.
-        if let Some(previous) = previous {
-            if previous.secret.session_id != data.session_id {
-                self.revoke_best_effort(&previous.secret.token).await;
-            }
+        if let Some(previous) = previous
+            && previous.secret.session_id != data.session_id
+        {
+            self.revoke_best_effort(&previous.secret.token).await;
         }
         Ok(snapshot)
     }
@@ -559,10 +557,10 @@ impl Controller {
     ) -> (Option<String>, Option<Error>) {
         let mut inner = self.inner.lock().await;
         self.ensure_loaded(&mut inner).await;
-        if let Some(expected) = expected_session_id {
-            if inner.current.as_ref().map(|c| c.secret.session_id.as_str()) != Some(expected) {
-                return (None, None);
-            }
+        if let Some(expected) = expected_session_id
+            && inner.current.as_ref().map(|c| c.secret.session_id.as_str()) != Some(expected)
+        {
+            return (None, None);
         }
         inner.generation += 1;
         inner.pending = None;

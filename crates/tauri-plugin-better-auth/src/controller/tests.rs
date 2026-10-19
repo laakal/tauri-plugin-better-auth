@@ -2,21 +2,22 @@
 //! mid-write or fail on demand, so races and failures are deterministic.
 
 use std::sync::{
+    Mutex as StdMutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
-    mpsc, Mutex as StdMutex,
+    mpsc,
 };
 
 use serde_json::json;
 use wiremock::{
-    matchers::{body_partial_json, header, method, path},
     Mock, MockServer, Request, ResponseTemplate,
+    matchers::{body_partial_json, header, method, path},
 };
 
 use super::*;
 use crate::{
     config::RawConfig,
     http::AppHeaders,
-    store::{profile::MemoryProfileStore, MemoryStore},
+    store::{MemoryStore, profile::MemoryProfileStore},
 };
 
 const CODE: &str = "abcdefghijklmnopqrstuvwxyzABCDEF";
@@ -554,11 +555,12 @@ async fn cancelling_during_the_exchange_saves_nothing() {
     flow.await.unwrap();
 
     assert!(h.store.secret().is_none());
-    assert!(!h
-        .events
-        .all()
-        .iter()
-        .any(|e| matches!(e, Ev::Authenticated(_))));
+    assert!(
+        !h.events
+            .all()
+            .iter()
+            .any(|e| matches!(e, Ev::Authenticated(_)))
+    );
     assert_eq!(
         h.revoked_tokens().await,
         vec!["tok-1"],
@@ -778,10 +780,11 @@ async fn a_revoked_session_signs_out_and_clears_storage() {
         .await;
 
     assert_eq!(h.controller.session(false).await.unwrap(), None);
-    assert!(h
-        .events
-        .all()
-        .contains(&Ev::SignedOut(SignOutReason::Revoked)));
+    assert!(
+        h.events
+            .all()
+            .contains(&Ev::SignedOut(SignOutReason::Revoked))
+    );
     assert!(h.store.secret().is_none());
 }
 
@@ -823,10 +826,11 @@ async fn a_locally_expired_session_signs_out_without_the_network() {
         })
         .unwrap();
     assert_eq!(h.controller.session(false).await.unwrap(), None);
-    assert!(h
-        .events
-        .all()
-        .contains(&Ev::SignedOut(SignOutReason::Expired)));
+    assert!(
+        h.events
+            .all()
+            .contains(&Ev::SignedOut(SignOutReason::Expired))
+    );
     assert!(h.server.received_requests().await.unwrap().is_empty());
 }
 
@@ -858,8 +862,9 @@ async fn exchange_errors_pass_through_server_codes() {
         .await;
     let state = h.start().await;
     h.controller.handle_deep_link(&Harness::link(&state)).await;
-    assert!(h
-        .events
-        .all()
-        .contains(&Ev::Error("DEVICE_LIMIT_REACHED".into())));
+    assert!(
+        h.events
+            .all()
+            .contains(&Ev::Error("DEVICE_LIMIT_REACHED".into()))
+    );
 }

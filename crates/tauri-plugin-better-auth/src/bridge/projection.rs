@@ -3,7 +3,7 @@
 //! Responses are rebuilt from known fields; passthrough bodies are scrubbed
 //! of every credential-shaped key, at any depth.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::models::SessionSnapshot;
 

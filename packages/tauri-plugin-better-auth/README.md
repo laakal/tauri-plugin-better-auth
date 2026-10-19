@@ -1,6 +1,6 @@
 # tauri-plugin-better-auth
 
-[Better Auth](https://better-auth.com) for [Tauri 2](https://tauri.app). Users
+[Better Auth](https://better-auth.com) for [Tauri 3](https://tauri.app). Users
 sign in through the system browser with PKCE. The session lives in Rust, and
 webview code never sees a token.
 
@@ -46,5 +46,6 @@ const authClient = asTauriClient(
 await requestAuth();
 ```
 
-Requires `better-auth` >= 1.7.4 and, for `/client`, `@tauri-apps/api` >= 2.11.
+Requires `better-auth` >= 1.7.4 and, for `/client`, `@tauri-apps/api` 3 (alpha). For Tauri 2,
+use `0.1.x`.
 MIT licensed.

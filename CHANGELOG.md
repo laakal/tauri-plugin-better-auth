@@ -3,6 +3,24 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
+## 0.2.0-alpha.0 (unreleased, npm tag `next`)
+
+The Tauri 3 line. Tauri 2 apps keep using `0.1.x`.
+
+- Requires Tauri 3 (`3.0.0-alpha.5`+), `tauri-plugin` 3, Rust 1.95 and
+  `@tauri-apps/api` 3. The crate moves to edition 2024.
+- Works with both Tauri 3 runtimes: wry (system webview) and CEF (Chromium).
+  The README's "Tauri 3 and CEF" section covers the CEF origin, deep-link
+  delivery and single-instance.
+- `Transport::Auto` on macOS no longer treats the CEF runtime's `tauri dev`
+  bundle (an `.app` under `target/`) as installed, so dev sign-in uses the
+  loopback redirect instead of a deep link that never arrives.
+- Command permissions follow Tauri 3's compact ACL: the per-command permission
+  files are gone, and `allow-*`/`deny-*` resolve as before. `better-auth:default`
+  is unchanged.
+- No protocol changes: the wire protocol is still v1, so `0.1.x` servers and
+  hand-off pages work with `0.2.x` apps.
+
 ## 0.1.0 (unreleased)
 
 First release. Protocol v1.

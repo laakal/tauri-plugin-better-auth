@@ -99,7 +99,7 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
   rust-compat:
-    name: Rust with Tauri 2.11.5
+    name: Rust with the oldest supported Tauri 3 (3.0.0-alpha.5)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -110,17 +110,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev pkg-config
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo update -p tauri --precise 2.11.5
+      - run: cargo update -p tauri --precise 3.0.0-alpha.5
       - run: cargo test -p tauri-plugin-better-auth
 
   msrv:
-    name: MSRV (1.88)
+    name: MSRV (1.95)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@9c73e2f62269c4b1d0240bd5dd1b81de08099bb6 # 1.88.0
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable action; the toolchain input pins the version
         with:
-          toolchain: 1.88.0
+          toolchain: 1.95.0
       - run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev pkg-config

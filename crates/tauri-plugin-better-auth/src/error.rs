@@ -1,4 +1,4 @@
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 /// Result type of this crate.
 pub type Result<T> = std::result::Result<T, Error>;

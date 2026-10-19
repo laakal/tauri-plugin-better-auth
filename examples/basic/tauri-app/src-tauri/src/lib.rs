@@ -3,7 +3,8 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
+    // Tauri 3: choose the webview runtime (wry = the system webview).
+    let mut builder = tauri::Builder::default().runtime(tauri_runtime_wry::Wry::default());
 
     // 1. single-instance first: on Windows and Linux a deep link starts a new
     //    process; this forwards it to the running app instead.

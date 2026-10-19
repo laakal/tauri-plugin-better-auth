@@ -4,21 +4,21 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::{
-    sync::{mpsc, Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
     time::Duration,
 };
 
 use serde_json::json;
 use tauri::{
-    test::{mock_builder, mock_context, noop_assets},
     Emitter, Listener,
+    test::{mock_builder, mock_context, noop_assets},
 };
 use tauri_plugin_better_auth::{
     BetterAuthExt, Builder, MemoryStore, RequestAuthOptions, Transport,
 };
 use wiremock::{
-    matchers::{method, path},
     Mock, MockServer, ResponseTemplate,
+    matchers::{method, path},
 };
 
 const CODE: &str = "abcdefghijklmnopqrstuvwxyzABCDEF";

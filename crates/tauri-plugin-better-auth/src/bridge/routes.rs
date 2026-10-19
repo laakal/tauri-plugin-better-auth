@@ -3,8 +3,8 @@
 use url::Url;
 
 use crate::{
-    config::{Config, RouteKind},
     Error, Result,
+    config::{Config, RouteKind},
 };
 
 /// A classified bridged request.

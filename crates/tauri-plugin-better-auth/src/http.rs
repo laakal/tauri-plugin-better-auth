@@ -5,11 +5,11 @@
 use std::{sync::Arc, time::Duration};
 
 use reqwest::{
-    header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE},
-    redirect::Policy,
     Client, Response, StatusCode,
+    header::{ACCEPT, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue},
+    redirect::Policy,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use url::Url;
 
 use crate::{Error, Result};
@@ -356,8 +356,8 @@ mod tests {
     use super::*;
     use serde_json::json;
     use wiremock::{
-        matchers::{body_json, header, header_exists, method, path},
         Mock, MockServer, ResponseTemplate,
+        matchers::{body_json, header, header_exists, method, path},
     };
 
     fn api(server: &MockServer) -> HttpApi {

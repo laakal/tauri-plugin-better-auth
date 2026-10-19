@@ -1,12 +1,12 @@
 //! Webview commands. Thin wrappers: the logic lives in the controller and the
 //! bridge. No command returns a token.
 
-use tauri::{command, AppHandle, Runtime};
+use tauri::{AppHandle, Runtime, command};
 
 use crate::{
+    BetterAuthExt, Result,
     bridge::{BridgeRequest, BridgeResponse},
     models::{RequestAuthOptions, RequestAuthResult, SessionSnapshot},
-    BetterAuthExt, Result,
 };
 
 #[command]

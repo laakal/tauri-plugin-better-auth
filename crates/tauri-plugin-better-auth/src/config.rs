@@ -284,12 +284,12 @@ pub(crate) fn parse_http_url(field: &str, value: &str, allow_query: bool) -> Res
         "http" => {
             return Err(Error::Config(format!(
                 "`{field}` must use https (plain http is only allowed for localhost): {value}"
-            )))
+            )));
         }
         _ => {
             return Err(Error::Config(format!(
                 "`{field}` must be an http(s) URL: {value}"
-            )))
+            )));
         }
     }
     if !url.username().is_empty() || url.password().is_some() {
@@ -503,10 +503,12 @@ mod tests {
             kind: AuthRouteKind::SignIn,
         });
         let config = config.validate().unwrap();
-        assert!(config
-            .auth_routes
-            .iter()
-            .any(|(m, p, k)| m == "POST" && p == "/change-password" && *k == RouteKind::SignIn));
+        assert!(
+            config
+                .auth_routes
+                .iter()
+                .any(|(m, p, k)| m == "POST" && p == "/change-password" && *k == RouteKind::SignIn)
+        );
 
         let mut config = raw();
         config.auth_routes.push(ExtraAuthRoute {

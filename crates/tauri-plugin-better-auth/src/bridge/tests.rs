@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use serde_json::json;
 use wiremock::{
-    matchers::{header, method, path},
     Mock, MockServer, Request, ResponseTemplate,
+    matchers::{header, method, path},
 };
 
 use super::*;
@@ -15,7 +15,7 @@ use crate::{
     controller::{BrowserOpener, ControllerParts, EventSink},
     http::{AppHeaders, HttpApi},
     models::SignOutReason,
-    store::{profile::MemoryProfileStore, MemoryStore},
+    store::{MemoryStore, profile::MemoryProfileStore},
 };
 
 struct Quiet;

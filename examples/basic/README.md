@@ -6,7 +6,7 @@ A runnable demo of every part of the plugin:
   - Sign-in is by email code; codes are printed to the console.
   - It uses `bearer()` and `tauri()`.
   - It serves the `/desktop` hand-off page and a protected `/api/me` route.
-- **`tauri-app/`** is a Tauri 2 app.
+- **`tauri-app/`** is a Tauri 3 app on the wry runtime.
   - It signs in through the browser, by pasting a code, or in-app with an
     email code.
   - It calls `/api/me` through the Rust bridge and can sign out.

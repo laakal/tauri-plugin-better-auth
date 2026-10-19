@@ -1,9 +1,9 @@
 [package]
 name = "tauri-plugin-better-auth"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.88"
-description = "Better Auth for Tauri 2: browser sign-in with PKCE, a Rust-held session and a token-free webview."
+version = "0.2.0-alpha.0"
+edition = "2024"
+rust-version = "1.95"
+description = "Better Auth for Tauri 3: browser sign-in with PKCE, a Rust-held session and a token-free webview."
 license = "MIT"
 repository = "https://github.com/laakal/tauri-plugin-better-auth"
 homepage = "https://github.com/laakal/tauri-plugin-better-auth"
@@ -17,7 +17,7 @@ exclude = ["/tests/fixtures"]
 [package.metadata.platforms.support]
 windows = { level = "full", notes = "Register tauri-plugin-single-instance with the `deep-link` feature, or deep links start a second instance." }
 linux = { level = "full", notes = "Same single-instance requirement as Windows. The keychain store needs a running Secret Service (GNOME Keyring, KWallet)." }
-macos = { level = "full", notes = "Deep links only reach an installed `.app` bundle; `tauri dev` falls back to loopback." }
+macos = { level = "full", notes = "Deep links only reach an installed `.app` bundle; `tauri dev` (also the CEF dev bundle under `target/`) falls back to loopback." }
 android = { level = "none", notes = "Planned for 0.2 (Custom Tabs)." }
 ios = { level = "none", notes = "Planned for 0.2 (ASWebAuthenticationSession)." }
 
@@ -30,7 +30,7 @@ default = ["keyring"]
 keyring = ["dep:keyring"]
 
 [dependencies]
-tauri = { version = "2.11", default-features = false }
+tauri = { version = "3.0.0-alpha.5", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -63,10 +63,12 @@ keyring = { version = "4.2", default-features = false, features = [
 ], optional = true }
 
 [build-dependencies]
-tauri-plugin = { version = "2.5", features = ["build"] }
+tauri-plugin = { version = "3.0.0-alpha.4", features = ["build"] }
 
 [dev-dependencies]
-tauri = { version = "2.11", default-features = false, features = ["test"] }
+tauri = { version = "3.0.0-alpha.5", default-features = false, features = [
+  "test",
+] }
 tokio = { version = "1", features = [
   "macros",
   "rt-multi-thread",

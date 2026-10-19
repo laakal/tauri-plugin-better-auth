@@ -10,25 +10,25 @@ pub(crate) mod routes;
 
 use std::{collections::HashMap, sync::Arc};
 
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
     Method, Response, StatusCode,
+    header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use url::Url;
 
 use crate::{
+    Error, Result,
     config::RouteKind,
     controller::Controller,
     http::{bearer, header_token, network},
-    Error, Result,
 };
 
 use self::{
     projection::{error_body, scrub, session_body, sign_in_body},
-    routes::{classify, Route},
+    routes::{Route, classify},
 };
 
 /// Largest request body the webview may send.
@@ -289,7 +289,7 @@ impl Bridge {
             other => {
                 return Err(Error::InvalidRequest(format!(
                     "method {other} is not allowed"
-                )))
+                )));
             }
         };
         match classify(self.controller.config(), method.as_str(), &url)? {
@@ -397,7 +397,7 @@ impl Bridge {
                     Err(error) => {
                         error_response(StatusCode::BAD_GATEWAY, error.code(), &error.to_string())
                     }
-                })
+                });
             }
         };
         if bytes.is_empty() {

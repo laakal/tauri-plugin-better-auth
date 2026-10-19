@@ -1,6 +1,6 @@
 //! # tauri-plugin-better-auth
 //!
-//! [Better Auth](https://better-auth.com) for Tauri 2 desktop apps: browser
+//! [Better Auth](https://better-auth.com) for Tauri 3 desktop apps: browser
 //! sign-in with PKCE, a session held in Rust, and a webview that never sees a
 //! token.
 //!
@@ -18,6 +18,8 @@
 //! ```rust,ignore
 //! # fn main() {
 //! tauri::Builder::default()
+//!     // Tauri 3: pick a runtime (`tauri_runtime_cef::Cef` works too).
+//!     .runtime(tauri_runtime_wry::Wry::default())
 //!     // Register single-instance (with its `deep-link` feature) and deep-link first.
 //!     .plugin(
 //!         tauri_plugin_better_auth::Builder::new()
@@ -52,8 +54,8 @@ use std::{marker::PhantomData, path::PathBuf, sync::Arc, time::Duration};
 
 use serde_json::Value;
 use tauri::{
-    plugin::{Builder as PluginBuilder, TauriPlugin},
     AppHandle, Emitter, Listener, Manager, Runtime,
+    plugin::{Builder as PluginBuilder, TauriPlugin},
 };
 
 use crate::{
