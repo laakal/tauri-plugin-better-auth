@@ -67,7 +67,9 @@ fn protocol_round_trip_against_the_example_server() {
             .json()
             .await
             .unwrap();
-        let otp = otp["otp"].as_str().expect("start the server with EXAMPLE_TEST_MODE=1");
+        let otp = otp["otp"]
+            .as_str()
+            .expect("start the server with EXAMPLE_TEST_MODE=1");
         let signed_in = http
             .post(format!("{base}/api/auth/sign-in/email-otp"))
             .json(&json!({ "email": email, "otp": otp }))
@@ -79,7 +81,15 @@ fn protocol_round_trip_against_the_example_server() {
             .headers()
             .get_all("set-cookie")
             .iter()
-            .map(|value| value.to_str().unwrap().split(';').next().unwrap().to_owned())
+            .map(|value| {
+                value
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            })
             .collect::<Vec<_>>()
             .join("; ")
     });
@@ -112,8 +122,12 @@ fn protocol_round_trip_against_the_example_server() {
         tx.send(event.payload().to_owned()).unwrap();
     });
     let handle = app.handle().clone();
-    tauri::async_runtime::block_on(handle.better_auth().request_auth(RequestAuthOptions::default()))
-        .unwrap();
+    tauri::async_runtime::block_on(
+        handle
+            .better_auth()
+            .request_auth(RequestAuthOptions::default()),
+    )
+    .unwrap();
     let sign_in_url = opened.lock().unwrap()[0].clone();
     assert!(sign_in_url.starts_with(&format!("{base}/desktop?")));
     let state = query_value(&sign_in_url, "state");
@@ -142,7 +156,9 @@ fn protocol_round_trip_against_the_example_server() {
     // 4. The browser opens the deep link; the plugin exchanges the code.
     app.emit(
         "deep-link://new-url",
-        vec![format!("{CLIENT_ID}://auth/callback?code={code}&state={state}")],
+        vec![format!(
+            "{CLIENT_ID}://auth/callback?code={code}&state={state}"
+        )],
     )
     .unwrap();
     let payload: Value =
