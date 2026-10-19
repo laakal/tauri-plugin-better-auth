@@ -1,0 +1,21 @@
+{
+  "name": "example-tauri-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "tauri": "tauri",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.3",
+    "better-auth": "1.7.7",
+    "tauri-plugin-better-auth": "workspace:*"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
+    "typescript": "7.0.2",
+    "vite": "8.3.0"
+  }
+}

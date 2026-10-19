@@ -1,0 +1,84 @@
+[package]
+name = "tauri-plugin-better-auth"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Better Auth for Tauri 2: browser sign-in with PKCE, a Rust-held session and a token-free webview."
+license = "MIT"
+repository = "https://github.com/laakal/tauri-plugin-better-auth"
+homepage = "https://github.com/laakal/tauri-plugin-better-auth"
+documentation = "https://docs.rs/tauri-plugin-better-auth"
+readme = "README.md"
+keywords = ["tauri", "tauri-plugin", "better-auth", "authentication", "pkce"]
+categories = ["authentication", "gui"]
+links = "tauri-plugin-better-auth"
+exclude = ["/tests/fixtures"]
+
+[package.metadata.platforms.support]
+windows = { level = "full", notes = "Register tauri-plugin-single-instance with the `deep-link` feature, or deep links start a second instance." }
+linux = { level = "full", notes = "Same single-instance requirement as Windows. The keychain store needs a running Secret Service (GNOME Keyring, KWallet)." }
+macos = { level = "full", notes = "Deep links only reach an installed `.app` bundle; `tauri dev` falls back to loopback." }
+android = { level = "none", notes = "Planned for 0.2 (Custom Tabs)." }
+ios = { level = "none", notes = "Planned for 0.2 (ASWebAuthenticationSession)." }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = ["keyring"]
+## OS keychain session storage (macOS Keychain, Windows Credential Manager, Linux Secret Service).
+keyring = ["dep:keyring"]
+
+[dependencies]
+tauri = { version = "2.11", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+log = "0.4"
+url = "2"
+tokio = { version = "1", features = ["sync", "time", "net", "rt", "macros"] }
+reqwest = { version = "0.13", default-features = false, features = [
+  "rustls-no-provider",
+  "json",
+  "http2",
+  "charset",
+  "system-proxy",
+] }
+rustls = { version = "0.23", default-features = false, features = [
+  "ring",
+  "std",
+  "tls12",
+] }
+rustls-platform-verifier = "0.7"
+sha2 = "0.11"
+base64 = "0.22"
+getrandom = "0.3"
+subtle = "2.6"
+open = { version = "5", features = ["shellexecute-on-windows"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+keyring = { version = "4.2", default-features = false, features = [
+  "v1",
+], optional = true }
+
+[build-dependencies]
+tauri-plugin = { version = "2.5", features = ["build"] }
+
+[dev-dependencies]
+tauri = { version = "2.11", default-features = false, features = ["test"] }
+tokio = { version = "1", features = [
+  "macros",
+  "rt-multi-thread",
+  "sync",
+  "time",
+] }
+wiremock = "0.6"
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"

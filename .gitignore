@@ -1,0 +1,23 @@
+# dependencies and build output
+node_modules/
+dist/
+target/
+.cache/
+*.tsbuildinfo
+*.tgz
+
+# example runtime data
+examples/basic/server/*.db
+examples/basic/server/*.db-*
+examples/basic/tauri-app/src-tauri/gen/schemas/
+
+# env files: secrets never go in git
+.env
+.env.*
+!.env.example
+
+# editors and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

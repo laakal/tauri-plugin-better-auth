@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Better Auth Example</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+      }
+      body {
+        max-width: 34rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      section {
+        display: grid;
+        gap: 0.5rem;
+        margin: 1.25rem 0;
+      }
+      input,
+      button {
+        font: inherit;
+        padding: 0.4rem 0.7rem;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-break: break-all;
+        font-size: 0.85rem;
+      }
+      .muted {
+        opacity: 0.7;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Better Auth Example</h1>
+    <p id="status" role="status">Loading…</p>
+
+    <section id="signed-out">
+      <h2>Sign in</h2>
+      <button id="browser" type="button">Continue in browser</button>
+      <div id="waiting" hidden>
+        <p class="muted">Finish signing in in your browser.</p>
+        <label for="paste">Or paste the code or link from the browser</label>
+        <input id="paste" autocomplete="off" />
+        <button id="paste-submit" type="button">Use code</button>
+        <button id="cancel" type="button">Cancel</button>
+      </div>
+
+      <h3>Or with an email code, in the app</h3>
+      <input id="email" type="email" placeholder="you@example.com" />
+      <button id="send-otp" type="button">Send code</button>
+      <input id="otp" inputmode="numeric" placeholder="123456" />
+      <button id="verify-otp" type="button">Sign in</button>
+    </section>
+
+    <section id="signed-in" hidden>
+      <button id="me" type="button">Call /api/me through the bridge</button>
+      <button id="sign-out" type="button">Sign out</button>
+    </section>
+
+    <pre id="output"></pre>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

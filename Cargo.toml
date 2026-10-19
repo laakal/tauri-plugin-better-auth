@@ -1,0 +1,11 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/tauri-plugin-better-auth",
+  "examples/basic/tauri-app/src-tauri",
+]
+
+[workspace.metadata]
+# The crate and the npm package are released together with the same version.
+# `scripts/check-versions.mjs` (run in CI) fails when they drift.
+lockstep-with = "packages/tauri-plugin-better-auth/package.json"

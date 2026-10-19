@@ -1,0 +1,32 @@
+{
+  "name": "tauri-plugin-better-auth-workspace",
+  "private": true,
+  "description": "Workspace for tauri-plugin-better-auth: the npm package, the Rust crate and the example.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "examples/basic/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "bun run --filter tauri-plugin-better-auth build",
+    "check": "oxlint . && oxfmt --check .",
+    "format": "oxfmt .",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "lint:package": "bun run --filter tauri-plugin-better-auth lint:package",
+    "test": "vitest run",
+    "test:rust": "cargo test --workspace",
+    "typecheck": "bun run --filter '*' typecheck"
+  },
+  "devDependencies": {
+    "oxfmt": "0.67.0",
+    "oxlint": "1.82.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "bun@1.4.2"
+}

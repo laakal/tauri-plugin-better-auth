@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The example window: core APIs and the better-auth plugin.",
+  "windows": ["main"],
+  "permissions": ["core:default", "better-auth:default"]
+}
