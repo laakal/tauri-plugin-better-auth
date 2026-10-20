@@ -3,7 +3,7 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
-## 0.2.0-alpha.0 (unreleased, npm tag `next`)
+## 0.2.0-alpha.0 (2026-10-20, npm tag `next`)
 
 The Tauri 3 line. Tauri 2 apps keep using `0.1.x`.
 

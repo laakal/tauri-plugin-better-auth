@@ -86,8 +86,5 @@ The Tauri 3 line lives on the `v3` branch (`0.2.x` pre-releases). Its
 `publishConfig.tag` is `next`, so approving a `v3` release never moves npm's
 `latest` (the Tauri 2 line).
 
-**npm auth:** the first release uses a short-lived _stage-only_ granular token
-(`NPM_TOKEN` secret). After it, configure npm trusted publishing (package
-Settings → Trusted Publisher → GitHub Actions, workflow `release.yml`), then
-delete the `NPM_TOKEN` secret and revoke the token: CI authenticates with OIDC
-and can still only stage.
+**npm auth:** trusted publishing (GitHub OIDC) for `release.yml`, set on the
+package's npmjs.com settings. No npm token is stored in the repository.
