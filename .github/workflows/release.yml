@@ -62,3 +62,24 @@ jobs:
       - run: cargo publish -p tauri-plugin-better-auth
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # After both registries succeed: a GitHub Release whose notes are this
+  # version's CHANGELOG.md section. Tags with a `-` (e.g. v0.2.0-alpha.0) are
+  # marked as pre-releases. The npm version may still await its 2FA approval.
+  github-release:
+    needs: [crate, npm]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Create the GitHub Release from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" 'index($0, "## " v " ") == 1 {f=1; next} /^## /{f=0} f' CHANGELOG.md > notes.md
+          prerelease=""
+          case "$version" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md $prerelease
