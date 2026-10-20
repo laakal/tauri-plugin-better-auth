@@ -17,9 +17,11 @@
     "lint:package": "bun run --filter tauri-plugin-better-auth lint:package",
     "test": "vitest run",
     "test:rust": "cargo test --workspace",
-    "typecheck": "bun run --filter '*' typecheck"
+    "typecheck": "bun run --filter '*' typecheck",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
+    "@changesets/cli": "3.0.3",
     "oxfmt": "0.74.0",
     "oxlint": "1.89.0",
     "typescript": "7.0.2",

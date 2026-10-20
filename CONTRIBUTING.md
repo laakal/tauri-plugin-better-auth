@@ -70,20 +70,25 @@ cargo test -p tauri-plugin-better-auth --lib -- --ignored keyring_round_trip
 
 ## Releasing
 
-The npm package and the crate share one version.
+The npm package and the crate share one version and one root `CHANGELOG.md`.
 
-1. Add a changeset: `bunx changeset`.
-2. `bunx changeset version` bumps `package.json` and `CHANGELOG.md`.
-3. Set the same version in `crates/tauri-plugin-better-auth/Cargo.toml` and
-   `packages/tauri-plugin-better-auth/src/version.ts`.
-   `node scripts/check-versions.mjs` (also run in CI) verifies all three.
-4. Tag `vX.Y.Z` and push. `release.yml` publishes the crate to crates.io and
-   **stages** the npm version (with provenance).
-5. Approve the staged npm version with 2FA: npmjs.com → Staged Packages →
+1. While working, describe user-facing changes with a changeset:
+   `bunx changeset` (pick patch/minor, write one line). Or write the next
+   version's section in `CHANGELOG.md` by hand, e.g. `## 0.1.1 (unreleased)`.
+2. On a clean `main` (or `v3`), run `bun run release` when changesets are
+   pending, or `bun run release 0.1.1` for a hand-written section. Add
+   `--dry-run` to see the changes without committing. The script:
+   - applies the changesets and moves their notes into the root `CHANGELOG.md`
+   - sets the version in `package.json`, `Cargo.toml`, `Cargo.lock` and
+     `src/version.ts`, and dates the changelog heading
+   - runs `check-versions` and `bun run check`
+   - commits `chore: release vX.Y.Z` and tags `vX.Y.Z`; it never pushes
+3. Check the commit, then `git push origin main vX.Y.Z` (on `v3`:
+   `git push origin v3 vX.Y.Z`). `release.yml` publishes the crate to crates.io,
+   **stages** the npm version (with provenance) and creates the GitHub Release
+   from the changelog section (a pre-release for `-alpha`/`-beta` tags).
+4. Approve the staged npm version with 2FA: npmjs.com → Staged Packages →
    Approve, or `npm stage list` then `npm stage approve <stage-id>`.
-6. `release.yml` then creates the GitHub Release from the version's
-   `CHANGELOG.md` section (a pre-release for `-alpha`/`-beta` tags), so date the
-   changelog heading before tagging.
 
 The Tauri 3 line lives on the `v3` branch (`0.2.x` pre-releases). Its
 `publishConfig.tag` is `next`, so approving a `v3` release never moves npm's
