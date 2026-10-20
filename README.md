@@ -278,8 +278,8 @@ connect-src 'self' ipc: http://ipc.localhost
 ## Using it in the webview
 
 ```ts
-import { createAuthClient } from 'better-auth/react'; // or /client, /vue, /svelte…
 import { emailOTPClient } from 'better-auth/client/plugins';
+import { createAuthClient } from 'better-auth/react'; // or /client, /vue, /svelte…
 import {
   asTauriClient,
   onAuthError,
