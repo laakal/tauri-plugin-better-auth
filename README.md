@@ -245,7 +245,9 @@ tauri-plugin-deep-link = "3.0.0-alpha.3"
 tauri-runtime-wry = "3.0.0-alpha.5" # or tauri-runtime-cef, see "Tauri 3 and CEF"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
-tauri-plugin-single-instance = { version = "3.0.0-alpha.3", features = ["deep-link"] }
+tauri-plugin-single-instance = { version = "3.0.0-alpha.3", features = [
+  "deep-link",
+] }
 ```
 
 ```rust
@@ -305,8 +307,8 @@ connect-src 'self' ipc: http://ipc.localhost
 ## Using it in the webview
 
 ```ts
-import { createAuthClient } from 'better-auth/react'; // or /client, /vue, /svelte…
 import { emailOTPClient } from 'better-auth/client/plugins';
+import { createAuthClient } from 'better-auth/react'; // or /client, /vue, /svelte…
 import {
   asTauriClient,
   onAuthError,
