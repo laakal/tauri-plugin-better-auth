@@ -81,6 +81,9 @@ The npm package and the crate share one version.
    **stages** the npm version (with provenance).
 5. Approve the staged npm version with 2FA: npmjs.com → Staged Packages →
    Approve, or `npm stage list` then `npm stage approve <stage-id>`.
+6. `release.yml` then creates the GitHub Release from the version's
+   `CHANGELOG.md` section (a pre-release for `-alpha`/`-beta` tags), so date the
+   changelog heading before tagging.
 
 The Tauri 3 line lives on the `v3` branch (`0.2.x` pre-releases). Its
 `publishConfig.tag` is `next`, so approving a `v3` release never moves npm's
