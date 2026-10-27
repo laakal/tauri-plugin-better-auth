@@ -7,6 +7,9 @@ Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
 - The npm package depends on `zod ^4.5.4` (Better Auth's own range) instead of
   exactly `4.6.7`, so apps share one zod copy with Better Auth.
+- README: a Limitations section (platforms, streaming, sign-in methods in the
+  webview, the route and origin allowlists, redirects). The old "mobile is
+  planned for 0.2" note is corrected: mobile is not supported on either line.
 
 ## 0.1.1 (2026-10-27)
 

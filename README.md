@@ -26,11 +26,13 @@ plugin stores their session in the OS keychain and authenticates API requests.
 | A return to the app by deep link, local redirect or pasted code                    | A request bridge that adds the bearer token in Rust                           |
 | Support for macOS, Windows and Linux                                               | Separate website and API domains, such as `example.com` and `api.example.com` |
 
-> **Desktop support:** macOS, Windows and Linux. Mobile is planned for 0.2.
+> **Desktop support:** macOS, Windows and Linux. Mobile is not supported yet.
+> See [Limitations](#limitations).
 
 ## On this page
 
 - [How it works](#how-it-works)
+- [Limitations](#limitations)
 - [Requirements](#requirements)
 - [Setup](#setup): server → hand-off page → Tauri app
 - [Using it in the webview](#using-it-in-the-webview)
@@ -75,6 +77,19 @@ sequenceDiagram
   PKCE verifier, which never leaves the app process.
 
 Exact formats are in [PROTOCOL.md](PROTOCOL.md).
+
+## Limitations
+
+Some of these are gaps; most are the security model, on purpose.
+
+| Area                  | Status                                                                                                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platforms             | Desktop only: macOS, Windows, Linux. iOS and Android are not supported yet, on either line.                                                                             |
+| Streaming             | Not yet. `tauriFetch` buffers each request and response (4 MiB per request, 16 MiB per API response), so SSE and streamed AI responses arrive in one piece, at the end. |
+| Sign-in methods       | All of them in the browser (`requestAuth()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                |
+| Better Auth endpoints | The webview reaches [eight routes](#the-auth-bridge). Others (a plugin's endpoints, `/change-password`…) need `auth_route(...)`; `/tauri/*` never. By design.           |
+| API origins           | The bearer token goes only to the origins and path prefixes in `api_routes` (call it once per domain). Any other URL returns `403 FORBIDDEN_URL`. By design.            |
+| Redirects             | Never followed, so a `307` cannot carry the token elsewhere. Auth responses must be uncompressed JSON. By design.                                                       |
 
 ## Requirements
 
@@ -351,7 +366,8 @@ const link = new OpenAPILink(contract, { url, fetch: tauriFetch }); // oRPC
 const api = ky.create({ fetch: tauriFetch });
 ```
 
-`tauriFetch` buffers bodies: text and binary work, streaming does not (yet).
+`tauriFetch` buffers bodies: text and binary work, streaming does not (yet;
+see [Limitations](#limitations)).
 
 ## The auth bridge
 
