@@ -53,6 +53,7 @@ rustls-platform-verifier = "0.7"
 # Not used directly: raises the minimum version (RUSTSEC-2026-0382, certificate
 # verification accepting distrusted intermediates). `rustls` 0.23.46 above covers
 # RUSTSEC-2026-0285 and 0346-0349.
+# rust-doctor: allow(rust_doctor::cargo::unused_dependency) -- a version floor, not imported
 rustls-webpki = { version = "0.103.16", default-features = false }
 sha2 = "0.11"
 base64 = "0.22"

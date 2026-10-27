@@ -1,0 +1,30 @@
+# Rust Doctor (https://rust-doctor.com), checked with rust-doctor@0.8.0:
+#   npx -y rust-doctor@0.8.0 . --yes --verbose
+# Unknown keys and rule ids are errors. Suppress one finding at its site with a
+# reason, never file-wide:
+#   Rust:  // rust-doctor: allow(<rule id>) -- <why>
+#   TOML:  # rust-doctor: allow(<rule id>) -- <why>
+
+# Exit non-zero when a finding reaches `error`.
+blocking = "error"
+
+[categories]
+security = "error"
+
+[rules]
+# Lint exemptions must say why and stay scoped to the item that needs them.
+"rust_doctor::structure::unreasoned_allow_attribute" = "error"
+"rust_doctor::structure::crate_level_allow" = "error"
+# Off: every duplicate comes from the dependency trees of Tauri, keyring and
+# hyper (indexmap, toml, syn, schemars, winnow, bitflags, ...), or is thiserror 1
+# there next to our thiserror 2. We cannot align them, and downgrading ours would
+# go backwards.
+"rust_doctor::cargo::duplicate_major_versions" = "off"
+# A warning, not an error: CI's `cargo audit` job is the gate for vulnerable
+# dependencies. It stays visible so new advisories surface. Known and accepted,
+# all in Tauri 2's Linux GTK3 / D-Bus stack, not reachable from this crate:
+#   glib 0.18 RUSTSEC-2024-0429 (unsound VariantStrIter; fixed only in glib 0.20,
+#     which needs GTK4: Tauri 3's CEF runtime). Shown as `vulnerable_dependency`.
+#   proc-macro-error, zbus_names, zvariant, zvariant_derive (unmaintained).
+# Rust Doctor 0.8.0 has no per-advisory ignore, so these keep appearing.
+"rust_doctor::cargo::vulnerable_dependency" = "warn"
