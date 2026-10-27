@@ -2,7 +2,7 @@
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run() -> tauri::Result<()> {
     // Tauri 3: choose the webview runtime (wry = the system webview).
     let mut builder = tauri::Builder::default().runtime(tauri_runtime_wry::Wry::default());
 
@@ -31,5 +31,4 @@ pub fn run() {
                 .build(),
         )
         .run(tauri::generate_context!())
-        .expect("error while running the example app");
 }

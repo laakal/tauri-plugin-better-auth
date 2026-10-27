@@ -5,6 +5,9 @@ members = [
   "examples/basic/tauri-app/src-tauri",
 ]
 
+[profile.release]
+overflow-checks = true
+
 [workspace.metadata]
 # The crate and the npm package are released together with the same version.
 # `scripts/check-versions.mjs` (run in CI) fails when they drift.

@@ -38,7 +38,9 @@ pub(crate) fn classify(config: &Config, method: &str, url: &Url) -> Result<Route
     if url.origin() == auth_origin
         && (path == auth_base || path.starts_with(&format!("{auth_base}/")))
     {
-        let relative = &path[auth_base.len()..];
+        let relative = path
+            .strip_prefix(auth_base)
+            .ok_or_else(|| Error::ForbiddenUrl(path.to_owned()))?;
         let method = method.to_ascii_uppercase();
         return config
             .auth_routes
