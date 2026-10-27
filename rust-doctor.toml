@@ -22,9 +22,12 @@ security = "error"
 "rust_doctor::cargo::duplicate_major_versions" = "off"
 # A warning, not an error: CI's `cargo audit` job is the gate for vulnerable
 # dependencies. It stays visible so new advisories surface. Known and accepted,
-# all in Tauri 2's Linux GTK3 / D-Bus stack, not reachable from this crate:
+# all Linux-only:
 #   glib 0.18 RUSTSEC-2024-0429 (unsound VariantStrIter; fixed only in glib 0.20,
-#     which needs GTK4: Tauri 3's CEF runtime). Shown as `vulnerable_dependency`.
-#   proc-macro-error, zbus_names, zvariant, zvariant_derive (unmaintained).
+#     which needs GTK4: Tauri 3's CEF runtime) and proc-macro-error (unmaintained,
+#     via glib-macros): Tauri's GTK3 stack, not reachable from this crate.
+#   zbus_names, zvariant, zvariant_derive (unmaintained: merged into zbus 6):
+#     keyring's Secret Service store, via secret-service 5 on zbus 5. Cleared by
+#     `cargo update` once secret-service moves to zbus 6.
 # Rust Doctor 0.8.0 has no per-advisory ignore, so these keep appearing.
 "rust_doctor::cargo::vulnerable_dependency" = "warn"

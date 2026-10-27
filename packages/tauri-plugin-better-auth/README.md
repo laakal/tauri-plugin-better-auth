@@ -5,7 +5,7 @@ sign in through the system browser with PKCE. The session lives in Rust, and
 webview code never sees a token.
 
 > **Tauri 2 line (`0.1.x`).** For Tauri 3 (alpha), install
-> `tauri-plugin-better-auth@next` and use crate version `0.2.0-alpha.0`
+> `tauri-plugin-better-auth@next` and use crate version `0.2.0-alpha.1`
 > ([`v3` branch](https://github.com/laakal/tauri-plugin-better-auth/tree/v3)).
 > Keep the npm package and the crate on the same line.
 

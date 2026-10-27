@@ -23,3 +23,9 @@ tauri-plugin-deep-link = "2.6"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2.5", features = ["deep-link"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Not used directly: tauri-plugin-deep-link 2.6.2 does not compile against
+# rust-ini 0.21.2+ (new `ParseOption` fields), so this holds it at 0.21.1 through
+# `cargo update`. Deep-link 3.0.0-alpha.3 has the fix; drop this once 2.x does.
+rust-ini = "=0.21.1"
