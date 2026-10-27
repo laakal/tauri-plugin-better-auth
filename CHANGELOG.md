@@ -3,6 +3,11 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
+## 0.1.2 (unreleased)
+
+- The npm package depends on `zod ^4.5.4` (Better Auth's own range) instead of
+  exactly `4.6.7`, so apps share one zod copy with Better Auth.
+
 ## 0.1.1 (2026-10-27)
 
 Maintenance release. Protocol v1, unchanged.
