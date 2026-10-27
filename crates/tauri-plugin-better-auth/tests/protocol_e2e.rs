@@ -10,7 +10,7 @@
 //! TPBA_E2E_URL=http://localhost:3000 cargo test --test protocol_e2e
 //! ```
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
 
 use std::{
     sync::{Arc, Mutex, mpsc},
@@ -27,15 +27,6 @@ use tauri_plugin_better_auth::{
 };
 
 const CLIENT_ID: &str = "com.example.betterauth";
-
-fn query_value(url: &str, key: &str) -> String {
-    url::Url::parse(url)
-        .unwrap()
-        .query_pairs()
-        .find(|(k, _)| k == key)
-        .map(|(_, v)| v.into_owned())
-        .unwrap()
-}
 
 #[test]
 fn protocol_round_trip_against_the_example_server() {
@@ -86,8 +77,8 @@ fn protocol_round_trip_against_the_example_server() {
     .unwrap();
     let sign_in_url = opened.lock().unwrap()[0].clone();
     assert!(sign_in_url.starts_with(&format!("{base}/desktop?")));
-    let state = query_value(&sign_in_url, "state");
-    let challenge = query_value(&sign_in_url, "code_challenge");
+    let state = common::query_value(&sign_in_url, "state");
+    let challenge = common::query_value(&sign_in_url, "code_challenge");
 
     // 3. The hand-off page: authorizes the app's request for the signed-in user.
     let code = tauri::async_runtime::block_on(async {
@@ -166,6 +157,11 @@ fn protocol_round_trip_against_the_example_server() {
     std::fs::remove_dir_all(profile_dir).ok();
 }
 
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test helper: any failed step is a test failure, reported by the panic"
+)]
 fn browser_sign_in(http: &reqwest::Client, base: &str, email: &str) -> String {
     tauri::async_runtime::block_on(async {
         let sent = http

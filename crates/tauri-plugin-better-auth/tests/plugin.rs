@@ -1,7 +1,7 @@
 //! Wiring test on Tauri's MockRuntime: the plugin listens to the deep-link
 //! plugin's event, exchanges the code and emits `better-auth://authenticated`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
 
 use std::{
     sync::{Arc, Mutex, mpsc},
@@ -22,15 +22,6 @@ use wiremock::{
 };
 
 const CODE: &str = "abcdefghijklmnopqrstuvwxyzABCDEF";
-
-fn state_of(url: &str) -> String {
-    url::Url::parse(url)
-        .unwrap()
-        .query_pairs()
-        .find(|(key, _)| key == "state")
-        .map(|(_, value)| value.into_owned())
-        .unwrap()
-}
 
 #[test]
 fn deep_link_events_drive_the_sign_in() {
@@ -90,7 +81,7 @@ fn deep_link_events_drive_the_sign_in() {
     )
     .unwrap();
     assert!(result.opened);
-    let state = state_of(&opened.lock().unwrap()[0]);
+    let state = common::query_value(&opened.lock().unwrap()[0], "state");
 
     // A forged state produces no event.
     app.emit(

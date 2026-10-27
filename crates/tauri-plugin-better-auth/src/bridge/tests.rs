@@ -120,6 +120,18 @@ impl Harness {
             .await;
     }
 
+    /// POSTs an empty JSON body to `endpoint`, which the server answers with `answer`.
+    async fn post(&self, endpoint: &str, answer: ResponseTemplate) -> BridgeResponse {
+        Mock::given(method("POST"))
+            .and(path(endpoint))
+            .respond_with(answer)
+            .mount(&self.server)
+            .await;
+        self.fetch("POST", endpoint, &[], Some(BridgeBody::Text("{}".into())))
+            .await
+            .unwrap()
+    }
+
     /// Signs in through the bridge with email OTP.
     async fn sign_in(&self) -> BridgeResponse {
         Mock::given(method("POST"))
@@ -358,26 +370,17 @@ async fn passthrough_auth_responses_are_scrubbed() {
     );
 }
 
+// rust-doctor: allow(rust_doctor::structure::duplicate_function_body) -- same shape as server_errors_pass_through, different endpoint and outcome
 #[tokio::test]
 async fn a_sign_in_without_a_session_passes_through_scrubbed() {
     let h = Harness::new().await;
-    Mock::given(method("POST"))
-        .and(path("/api/auth/sign-up/email"))
-        .respond_with(
+    let response = h
+        .post(
+            "/api/auth/sign-up/email",
             ResponseTemplate::new(200)
                 .set_body_json(json!({ "token": null, "user": { "id": "u2" } })),
         )
-        .mount(&h.server)
         .await;
-    let response = h
-        .fetch(
-            "POST",
-            "/api/auth/sign-up/email",
-            &[],
-            Some(BridgeBody::Text("{}".into())),
-        )
-        .await
-        .unwrap();
     assert_eq!(body_json(&response), json!({ "user": { "id": "u2" } }));
     assert_eq!(h.controller.bearer_token().await, None);
 }
@@ -385,23 +388,13 @@ async fn a_sign_in_without_a_session_passes_through_scrubbed() {
 #[tokio::test]
 async fn server_errors_pass_through() {
     let h = Harness::new().await;
-    Mock::given(method("POST"))
-        .and(path("/api/auth/sign-in/email-otp"))
-        .respond_with(
+    let response = h
+        .post(
+            "/api/auth/sign-in/email-otp",
             ResponseTemplate::new(400)
                 .set_body_json(json!({ "code": "INVALID_OTP", "message": "Invalid OTP" })),
         )
-        .mount(&h.server)
         .await;
-    let response = h
-        .fetch(
-            "POST",
-            "/api/auth/sign-in/email-otp",
-            &[],
-            Some(BridgeBody::Text("{}".into())),
-        )
-        .await
-        .unwrap();
     assert_eq!(response.status, 400);
     assert_eq!(body_json(&response)["code"], "INVALID_OTP");
 }
