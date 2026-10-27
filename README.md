@@ -82,14 +82,14 @@ Exact formats are in [PROTOCOL.md](PROTOCOL.md).
 
 Some of these are gaps; most are the security model, on purpose.
 
-| Area                  | Status                                                                                                                                                                  |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platforms             | Desktop only: macOS, Windows, Linux. iOS and Android are not supported yet, on either line.                                                                             |
-| Streaming             | Not yet. `tauriFetch` buffers each request and response (4 MiB per request, 16 MiB per API response), so SSE and streamed AI responses arrive in one piece, at the end. |
-| Sign-in methods       | All of them in the browser (`requestAuth()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                |
-| Better Auth endpoints | The webview reaches [eight routes](#the-auth-bridge). Others (a plugin's endpoints, `/change-password`…) need `auth_route(...)`; `/tauri/*` never. By design.           |
-| API origins           | The bearer token goes only to the origins and path prefixes in `api_routes` (call it once per domain). Any other URL returns `403 FORBIDDEN_URL`. By design.            |
-| Redirects             | Never followed, so a `307` cannot carry the token elsewhere. Auth responses must be uncompressed JSON. By design.                                                       |
+| Area                  | Status                                                                                                                                                                                                                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platforms             | Desktop only: macOS, Windows, Linux. iOS and Android are not supported yet, on either line.                                                                                                                                                                                   |
+| Streaming             | Not yet. `tauriFetch` buffers each request and response (4 MiB per request, 16 MiB per API response), and `timeout` (15 s) covers the whole response, body included. SSE and streamed AI answers arrive in one piece at the end, and fail if they take longer than `timeout`. |
+| Sign-in methods       | All of them in the browser (`requestAuth()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                                                                                                                      |
+| Better Auth endpoints | The webview reaches [eight routes](#the-auth-bridge). Others (a plugin's endpoints, `/change-password`…) need `auth_route(...)`; `/tauri/*` never. By design.                                                                                                                 |
+| API origins           | The bearer token goes only to the origins and path prefixes in `api_routes` (call it once per domain). Any other URL returns `403 FORBIDDEN_URL`. By design.                                                                                                                  |
+| Redirects             | Never followed, so a `307` cannot carry the token elsewhere. Auth responses must be uncompressed JSON. By design.                                                                                                                                                             |
 
 ## Requirements
 
