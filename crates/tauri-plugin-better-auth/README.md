@@ -4,6 +4,11 @@
 apps. Users sign in through the system browser with PKCE. The session lives in
 Rust (in the OS keychain), and the webview never sees a token.
 
+> **Tauri 3 line (`0.2.x` pre-releases).** For Tauri 2, install
+> `tauri-plugin-better-auth@latest` and use crate version `0.1`
+> ([`main` branch](https://github.com/laakal/tauri-plugin-better-auth)).
+> Keep the npm package and the crate on the same line.
+
 This crate is the Tauri plugin. Pair it with the npm package
 [`tauri-plugin-better-auth`](https://www.npmjs.com/package/tauri-plugin-better-auth),
 which provides the server plugin, the hand-off page client and the webview

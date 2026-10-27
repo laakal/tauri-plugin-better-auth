@@ -3,6 +3,21 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
+## 0.2.0-alpha.1 (unreleased, npm tag `next`)
+
+Brings the `0.1.1` fixes to the Tauri 3 line. Protocol v1, unchanged.
+
+- Security: the crate now requires `rustls` 0.23.46+ and `rustls-webpki`
+  0.103.16+, the patched releases for RUSTSEC-2026-0285, RUSTSEC-2026-0346 to
+  0349, and RUSTSEC-2026-0382.
+- Tested with Better Auth 1.7.14. Peer ranges are unchanged.
+- The READMEs say which line to install: `0.2.x` for Tauri 3, `0.1.x` for
+  Tauri 2. The npm release now names its `next` dist-tag explicitly, so a
+  pre-release never becomes `latest`.
+- Internal: the controller is split into flow and session modules, route
+  matching uses `strip_prefix` instead of slicing, and the repo is checked
+  with Rust Doctor. No behaviour change.
+
 ## 0.2.0-alpha.0 (2026-10-20, npm tag `next`)
 
 The Tauri 3 line. Tauri 2 apps keep using `0.1.x`.
@@ -21,7 +36,7 @@ The Tauri 3 line. Tauri 2 apps keep using `0.1.x`.
 - No protocol changes: the wire protocol is still v1, so `0.1.x` servers and
   hand-off pages work with `0.2.x` apps.
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-10-20)
 
 First release. Protocol v1.
 

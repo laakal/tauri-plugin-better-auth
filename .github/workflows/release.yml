@@ -42,11 +42,12 @@ jobs:
       # Staged publishing needs npm 11.15+.
       - run: npm install -g npm@11
       # Stages the version (with provenance); it goes live only after a
-      # maintainer approves it with 2FA. The dist-tag comes from
-      # publishConfig.tag (`next` on the v3 line, `latest` otherwise).
+      # maintainer approves it with 2FA. `stage publish` ignores
+      # publishConfig.tag, so the v3 line names its dist-tag here: `latest`
+      # stays on the Tauri 2 line (0.1.x).
       # npm authenticates through trusted publishing (OIDC, `id-token: write`).
       - working-directory: packages/tauri-plugin-better-auth
-        run: npm stage publish --provenance --access public
+        run: npm stage publish --provenance --access public --tag next
 
   crate:
     needs: verify

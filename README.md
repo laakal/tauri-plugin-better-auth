@@ -6,6 +6,17 @@ Bring [Better Auth](https://better-auth.com) to your [Tauri 3](https://tauri.app
 desktop app. Users sign in on your website through the system browser; the Rust
 plugin stores their session in the OS keychain and authenticates API requests.
 
+> [!NOTE]
+> **This is the Tauri 3 line (`0.2.x` pre-releases, npm tag `next`).** Using
+> Tauri 2? Use **`0.1.x`** from the [`main` branch](https://github.com/laakal/tauri-plugin-better-auth):
+> `npm i tauri-plugin-better-auth@latest` and `tauri-plugin-better-auth = "0.1"` in
+> `Cargo.toml`.
+>
+> | Your app        | npm                                         | crate           |
+> | --------------- | ------------------------------------------- | --------------- |
+> | Tauri 2         | `tauri-plugin-better-auth@latest` (`0.1.x`) | `0.1`           |
+> | Tauri 3 (alpha) | `tauri-plugin-better-auth@next` (`0.2.x`)   | `0.2.0-alpha.1` |
+
 [Get started](#setup) · [Run the example](examples/basic/README.md) ·
 [Configuration](#configuration-reference) · [Security](SECURITY.md)
 
@@ -240,7 +251,7 @@ if (cancelUrl) authClient.tauri.openApp(cancelUrl);
 
 ```toml
 [dependencies]
-tauri-plugin-better-auth = "0.2.0-alpha.0"
+tauri-plugin-better-auth = "0.2.0-alpha.1"
 tauri-plugin-deep-link = "3.0.0-alpha.3"
 tauri-runtime-wry = "3.0.0-alpha.5" # or tauri-runtime-cef, see "Tauri 3 and CEF"
 
