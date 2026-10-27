@@ -13,6 +13,7 @@ tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 tauri = { version = "2.12", features = [] }
+# Required by the expansion of tauri::generate_context! in src/lib.rs.
 serde_json = "1"
 tauri-plugin-better-auth = { path = "../../../../crates/tauri-plugin-better-auth" }
 # The example tracks the latest Tauri 2; the plugin crate itself supports 2.11+

@@ -48,51 +48,7 @@ fn protocol_round_trip_against_the_example_server() {
     let email = format!("e2e-{}@example.com", std::process::id());
 
     // 1. The "browser": signs in with an email code and keeps its cookies.
-    let browser_cookie = tauri::async_runtime::block_on(async {
-        let sent = http
-            .post(format!("{base}/api/auth/email-otp/send-verification-otp"))
-            .json(&json!({ "email": email, "type": "sign-in" }))
-            .send()
-            .await
-            .unwrap();
-        assert!(sent.status().is_success(), "send otp: {}", sent.status());
-        let otp: Value = http
-            .get(format!(
-                "{base}/__test/otp?email={}",
-                url::form_urlencoded::byte_serialize(email.as_bytes()).collect::<String>()
-            ))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let otp = otp["otp"]
-            .as_str()
-            .expect("start the server with EXAMPLE_TEST_MODE=1");
-        let signed_in = http
-            .post(format!("{base}/api/auth/sign-in/email-otp"))
-            .json(&json!({ "email": email, "otp": otp }))
-            .send()
-            .await
-            .unwrap();
-        assert!(signed_in.status().is_success());
-        signed_in
-            .headers()
-            .get_all("set-cookie")
-            .iter()
-            .map(|value| {
-                value
-                    .to_str()
-                    .unwrap()
-                    .split(';')
-                    .next()
-                    .unwrap()
-                    .to_owned()
-            })
-            .collect::<Vec<_>>()
-            .join("; ")
-    });
+    let browser_cookie = browser_sign_in(&http, &base, &email);
 
     // 2. The app: the real plugin on MockRuntime.
     let opened = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -208,4 +164,52 @@ fn protocol_round_trip_against_the_example_server() {
         assert_eq!(me.status(), 401);
     });
     std::fs::remove_dir_all(profile_dir).ok();
+}
+
+fn browser_sign_in(http: &reqwest::Client, base: &str, email: &str) -> String {
+    tauri::async_runtime::block_on(async {
+        let sent = http
+            .post(format!("{base}/api/auth/email-otp/send-verification-otp"))
+            .json(&json!({ "email": email, "type": "sign-in" }))
+            .send()
+            .await
+            .unwrap();
+        assert!(sent.status().is_success(), "send otp: {}", sent.status());
+        let otp: Value = http
+            .get(format!(
+                "{base}/__test/otp?email={}",
+                url::form_urlencoded::byte_serialize(email.as_bytes()).collect::<String>()
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let otp = otp["otp"]
+            .as_str()
+            .expect("start the server with EXAMPLE_TEST_MODE=1");
+        let signed_in = http
+            .post(format!("{base}/api/auth/sign-in/email-otp"))
+            .json(&json!({ "email": email, "otp": otp }))
+            .send()
+            .await
+            .unwrap();
+        assert!(signed_in.status().is_success());
+        signed_in
+            .headers()
+            .get_all("set-cookie")
+            .iter()
+            .map(|value| {
+                value
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
+    })
 }

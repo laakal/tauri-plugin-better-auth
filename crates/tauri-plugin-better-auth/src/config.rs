@@ -173,62 +173,8 @@ impl RawConfig {
             normalize_callback_path(self.callback_path.as_deref().unwrap_or("/auth/callback"))?;
         let client_id = validate_client_id(self.client_id.as_deref().unwrap_or("tauri"))?;
 
-        let mut api_routes = Vec::with_capacity(self.api_routes.len());
-        for (origin, prefixes) in self.api_routes {
-            let url = parse_http_url("api_routes origin", &origin, false)?;
-            if url.path() != "/" {
-                return Err(Error::Config(format!(
-                    "api_routes origin \"{origin}\" must be a bare origin such as https://api.example.com"
-                )));
-            }
-            for prefix in &prefixes {
-                if !prefix.starts_with('/') || prefix.contains("..") {
-                    return Err(Error::Config(format!(
-                        "api_routes prefix \"{prefix}\" must start with \"/\""
-                    )));
-                }
-            }
-            api_routes.push(ApiRoute {
-                origin: url.origin(),
-                prefixes,
-            });
-        }
-
-        let mut auth_routes: Vec<(String, String, RouteKind)> = DEFAULT_AUTH_ROUTES
-            .iter()
-            .map(|(method, path, kind)| ((*method).to_owned(), (*path).to_owned(), *kind))
-            .collect();
-        for extra in self.auth_routes {
-            let method = extra.method.to_ascii_uppercase();
-            if !matches!(method.as_str(), "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
-                return Err(Error::Config(format!(
-                    "auth_route method \"{}\" is not supported",
-                    extra.method
-                )));
-            }
-            if !extra.path.starts_with('/') || extra.path.contains("..") {
-                return Err(Error::Config(format!(
-                    "auth_route path \"{}\" must start with \"/\"",
-                    extra.path
-                )));
-            }
-            if extra.path == "/tauri" || extra.path.starts_with("/tauri/") {
-                return Err(Error::Config(
-                    "the /tauri/* endpoints can never be exposed to the webview".into(),
-                ));
-            }
-            if auth_routes
-                .iter()
-                .any(|(m, p, _)| *m == method && *p == extra.path)
-            {
-                continue;
-            }
-            let kind = match extra.kind {
-                AuthRouteKind::Passthrough => RouteKind::Passthrough,
-                AuthRouteKind::SignIn => RouteKind::SignIn,
-            };
-            auth_routes.push((method, extra.path, kind));
-        }
+        let api_routes = validate_api_routes(self.api_routes)?;
+        let auth_routes = validate_auth_routes(self.auth_routes)?;
 
         let pending_ttl = self.pending_ttl.unwrap_or(Duration::from_secs(600));
         if pending_ttl < Duration::from_secs(60) || pending_ttl > Duration::from_secs(3600) {
@@ -257,6 +203,71 @@ impl RawConfig {
             main_window: self.main_window.unwrap_or_else(|| "main".into()),
         })
     }
+}
+
+fn validate_api_routes(routes: Vec<(String, Vec<String>)>) -> Result<Vec<ApiRoute>> {
+    let mut api_routes = Vec::with_capacity(routes.len());
+    for (origin, prefixes) in routes {
+        let url = parse_http_url("api_routes origin", &origin, false)?;
+        if url.path() != "/" {
+            return Err(Error::Config(format!(
+                    "api_routes origin \"{origin}\" must be a bare origin such as https://api.example.com"
+                )));
+        }
+        for prefix in &prefixes {
+            if !prefix.starts_with('/') || prefix.contains("..") {
+                return Err(Error::Config(format!(
+                    "api_routes prefix \"{prefix}\" must start with \"/\""
+                )));
+            }
+        }
+        api_routes.push(ApiRoute {
+            origin: url.origin(),
+            prefixes,
+        });
+    }
+
+    Ok(api_routes)
+}
+
+fn validate_auth_routes(routes: Vec<ExtraAuthRoute>) -> Result<Vec<(String, String, RouteKind)>> {
+    let mut auth_routes: Vec<(String, String, RouteKind)> = DEFAULT_AUTH_ROUTES
+        .iter()
+        .map(|(method, path, kind)| ((*method).to_owned(), (*path).to_owned(), *kind))
+        .collect();
+    for extra in routes {
+        let method = extra.method.to_ascii_uppercase();
+        if !matches!(method.as_str(), "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
+            return Err(Error::Config(format!(
+                "auth_route method \"{}\" is not supported",
+                extra.method
+            )));
+        }
+        if !extra.path.starts_with('/') || extra.path.contains("..") {
+            return Err(Error::Config(format!(
+                "auth_route path \"{}\" must start with \"/\"",
+                extra.path
+            )));
+        }
+        if extra.path == "/tauri" || extra.path.starts_with("/tauri/") {
+            return Err(Error::Config(
+                "the /tauri/* endpoints can never be exposed to the webview".into(),
+            ));
+        }
+        if auth_routes
+            .iter()
+            .any(|(m, p, _)| *m == method && *p == extra.path)
+        {
+            continue;
+        }
+        let kind = match extra.kind {
+            AuthRouteKind::Passthrough => RouteKind::Passthrough,
+            AuthRouteKind::SignIn => RouteKind::SignIn,
+        };
+        auth_routes.push((method, extra.path, kind));
+    }
+
+    Ok(auth_routes)
 }
 
 fn missing(field: &str, hint: &str) -> Error {
@@ -354,12 +365,16 @@ pub(crate) fn normalize_callback_path(path: &str) -> Result<String> {
     };
     let valid = normalized.len() <= 64
         && normalized.len() > 1
-        && normalized[1..].split('/').all(|segment| {
-            !segment.is_empty()
-                && segment
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-        });
+        && normalized
+            .strip_prefix('/')
+            .unwrap_or("")
+            .split('/')
+            .all(|segment| {
+                !segment.is_empty()
+                    && segment
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            });
     if valid {
         Ok(normalized)
     } else {

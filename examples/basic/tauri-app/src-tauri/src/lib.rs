@@ -2,7 +2,7 @@
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run() -> tauri::Result<()> {
     let mut builder = tauri::Builder::default();
 
     // 1. single-instance first: on Windows and Linux a deep link starts a new
@@ -30,5 +30,4 @@ pub fn run() {
                 .build(),
         )
         .run(tauri::generate_context!())
-        .expect("error while running the example app");
 }

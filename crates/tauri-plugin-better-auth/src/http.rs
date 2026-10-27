@@ -281,24 +281,17 @@ pub(crate) fn parse_session_data(body: Value) -> Option<SessionData> {
 /// Parses `YYYY-MM-DDTHH:MM:SS[.fff](Z|±HH:MM)` into epoch milliseconds.
 pub(crate) fn parse_iso8601_ms(value: &str) -> Option<i64> {
     let bytes = value.as_bytes();
-    let num = |start: usize, len: usize| -> Option<i64> {
-        let slice = value.get(start..start + len)?;
-        if !slice.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        slice.parse().ok()
-    };
-    if bytes.len() < 20
-        || bytes[4] != b'-'
-        || bytes[7] != b'-'
-        || !matches!(bytes[10], b'T' | b't' | b' ')
-        || bytes[13] != b':'
-        || bytes[16] != b':'
-    {
+    let [y0, y1, y2, y3, b'-', m0, m1, b'-', d0, d1, b'T' | b't' | b' ', h0, h1, b':', n0, n1, b':', s0, s1, suffix @ ..] =
+        bytes
+    else {
         return None;
-    }
-    let (year, month, day) = (num(0, 4)?, num(5, 2)?, num(8, 2)?);
-    let (hour, minute, second) = (num(11, 2)?, num(14, 2)?, num(17, 2)?);
+    };
+    let year = decimal(&[*y0, *y1, *y2, *y3])?;
+    let month = decimal(&[*m0, *m1])?;
+    let day = decimal(&[*d0, *d1])?;
+    let hour = decimal(&[*h0, *h1])?;
+    let minute = decimal(&[*n0, *n1])?;
+    let second = decimal(&[*s0, *s1])?;
     if !(1..=12).contains(&month)
         || !(1..=31).contains(&day)
         || hour > 23
@@ -307,37 +300,55 @@ pub(crate) fn parse_iso8601_ms(value: &str) -> Option<i64> {
     {
         return None;
     }
-    let mut index = 19;
-    let mut millis = 0i64;
-    if bytes.get(index) == Some(&b'.') {
-        index += 1;
-        let start = index;
-        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
-            index += 1;
-        }
-        let fraction = &value[start..index];
-        if fraction.is_empty() {
-            return None;
-        }
-        let padded = format!("{fraction:0<3}");
-        millis = padded[..3].parse().ok()?;
-    }
-    let offset_minutes = match &value[index..] {
-        "Z" | "z" => 0,
-        tz if tz.len() == 6
-            && matches!(tz.as_bytes()[0], b'+' | b'-')
-            && tz.as_bytes()[3] == b':' =>
-        {
-            let sign = if tz.as_bytes()[0] == b'-' { -1 } else { 1 };
-            let hours: i64 = tz[1..3].parse().ok()?;
-            let minutes: i64 = tz[4..6].parse().ok()?;
-            sign * (hours * 60 + minutes)
-        }
-        _ => return None,
-    };
+    let (millis, timezone) = parse_fraction(suffix)?;
+    let offset_minutes = parse_timezone(timezone)?;
     let days = days_from_civil(year, month, day);
     let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second - offset_minutes * 60;
     Some(seconds * 1_000 + millis)
+}
+
+/// Parses only ASCII decimal digits, including for timezone components.
+fn decimal(bytes: &[u8]) -> Option<i64> {
+    bytes.iter().try_fold(0, |value, byte| {
+        byte.is_ascii_digit()
+            .then(|| value * 10 + i64::from(byte - b'0'))
+    })
+}
+
+fn parse_fraction(suffix: &[u8]) -> Option<(i64, &[u8])> {
+    let Some(fraction) = suffix.strip_prefix(b".") else {
+        return Some((0, suffix));
+    };
+    let count = fraction
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    if count == 0 {
+        return None;
+    }
+    let digits = fraction.get(..count)?;
+    let millis = digits
+        .iter()
+        .take(3)
+        .zip([100, 10, 1])
+        .fold(0, |sum, (byte, scale)| sum + i64::from(byte - b'0') * scale);
+    Some((millis, fraction.get(count..)?))
+}
+
+fn parse_timezone(timezone: &[u8]) -> Option<i64> {
+    match timezone {
+        b"Z" | b"z" => Some(0),
+        [sign @ (b'+' | b'-'), h0, h1, b':', m0, m1] => {
+            let hours = decimal(&[*h0, *h1])?;
+            let minutes = decimal(&[*m0, *m1])?;
+            if hours > 23 || minutes > 59 {
+                return None;
+            }
+            let sign = if *sign == b'-' { -1 } else { 1 };
+            Some(sign * (hours * 60 + minutes))
+        }
+        _ => None,
+    }
 }
 
 /// Days since 1970-01-01 (Howard Hinnant's algorithm).
@@ -392,12 +403,28 @@ mod tests {
             parse_iso8601_ms("2000-02-29T00:00:00.5Z"),
             Some(951_782_400_500)
         );
+        for (fraction, expected) in [("1", 100), ("12", 120), ("123", 123), ("123456", 123)] {
+            assert_eq!(
+                parse_iso8601_ms(&format!("1970-01-01T00:00:00.{fraction}Z")),
+                Some(expected)
+            );
+        }
+        assert_eq!(
+            parse_iso8601_ms("1970-01-01T00:00:00-01:30"),
+            Some(5_400_000)
+        );
         for bad in [
             "",
             "2026-10-16",
             "2026-13-01T00:00:00Z",
             "2026-10-16T12:34:56.Z",
             "2026-10-16T12:34:56",
+            "2026-10-16T12:34:56+é:00",
+            "2026-10-16T12:34:56+0é00",
+            "2026-10-16T12:34:56+24:00",
+            "2026-10-16T12:34:56+00:60",
+            "2026-10-16T12:34:56+-1:00",
+            "2026-10-16T12:34:56.éZ",
         ] {
             assert_eq!(parse_iso8601_ms(bad), None, "{bad}");
         }

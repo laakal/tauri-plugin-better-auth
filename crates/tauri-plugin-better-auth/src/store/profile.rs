@@ -39,7 +39,16 @@ pub(crate) struct FileProfileStore {
 impl FileProfileStore {
     pub fn new(dir: &Path, namespace: &str) -> Self {
         let digest = Sha256::digest(namespace.as_bytes());
-        let name: String = digest[..16].iter().map(|b| format!("{b:02x}")).collect();
+        let mut name = String::with_capacity(32);
+        for byte in digest.iter().take(16) {
+            for nibble in [byte >> 4, byte & 0x0f] {
+                name.push(char::from(if nibble < 10 {
+                    b'0' + nibble
+                } else {
+                    b'a' + nibble - 10
+                }));
+            }
+        }
         Self {
             path: dir.join(format!("{name}.json")),
         }
