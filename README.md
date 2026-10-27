@@ -44,6 +44,7 @@ plugin stores their session in the OS keychain and authenticates API requests.
 - [Troubleshooting](#troubleshooting)
 - [Security](#security)
 - [Compared to other approaches](#compared-to-other-approaches)
+- [Roadmap](#roadmap)
 
 ## How it works
 
@@ -80,7 +81,8 @@ Exact formats are in [PROTOCOL.md](PROTOCOL.md).
 
 ## Limitations
 
-Some of these are gaps; most are the security model, on purpose.
+Some of these are gaps ([Roadmap](#roadmap)); most are the security model,
+on purpose.
 
 | Area                  | Status                                                                                                                                                                                                                                                                        |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -629,6 +631,42 @@ context.
 
 [`examples/basic`](examples/basic) contains a Bun + Better Auth server with a
 hand-off page and a Tauri app using every feature. Follow the [example setup instructions](examples/basic/README.md) to run it locally.
+
+## Roadmap
+
+No dates: items ship when they are ready, in the order below. Open an
+[issue](https://github.com/laakal/tauri-plugin-better-auth/issues) to ask for
+something or to help.
+
+**Next: streaming responses** (a minor release on both lines)
+
+- `tauriFetch` returns a `Response` whose body streams, for `api_routes`
+  responses: SSE, AI SDK `streamText`, large downloads.
+- Chunks travel from Rust over a Tauri channel. `abort()` stops the request in
+  Rust.
+- `timeout` then covers the wait for response headers; a separate idle timeout
+  covers the gap between chunks, so a long answer streams for as long as it
+  keeps sending.
+- Unchanged: auth routes stay buffered and scrubbed, and the allowlists,
+  header filtering and the no-redirect rule apply as today.
+
+**Then: Tauri 3 stable**
+
+- The Tauri 3 line (`0.2.x`, npm tag `next`) leaves pre-release once Tauri 3
+  is stable.
+- The Tauri 2 line (`0.1.x`) keeps getting security and compatibility fixes.
+
+**Later: mobile** (iOS and Android)
+
+- Wanted, not scheduled. It needs a mobile keychain store and the platform
+  hand-off (app links and custom tabs).
+
+**Not planned** (by design, see [Security](#security)):
+
+- Exposing the session token to webview code.
+- Following redirects, or sending the token to origins outside `api_routes`.
+- Passkeys and 2FA inside the webview: they run on your sign-in page in the
+  browser.
 
 ## Versioning
 

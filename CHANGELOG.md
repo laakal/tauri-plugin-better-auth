@@ -10,6 +10,8 @@ Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 - README: a Limitations section (platforms, streaming, sign-in methods in the
   webview, the route and origin allowlists, redirects). The old "mobile is
   planned for 0.2" note is corrected: mobile is not supported on either line.
+- README: a Roadmap section (streaming next, then Tauri 3 stable, mobile
+  later) and what is not planned by design.
 
 ## 0.1.1 (2026-10-27)
 
