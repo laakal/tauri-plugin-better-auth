@@ -1,6 +1,6 @@
 {
   "name": "tauri-plugin-better-auth",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Better Auth for Tauri 2: browser sign-in with PKCE, a Rust-held session and a token-free webview.",
   "keywords": [
     "auth",
