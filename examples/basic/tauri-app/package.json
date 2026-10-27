@@ -10,12 +10,12 @@
   },
   "dependencies": {
     "@tauri-apps/api": "3.0.0-alpha.3",
-    "better-auth": "1.7.11",
+    "better-auth": "1.7.14",
     "tauri-plugin-better-auth": "workspace:*"
   },
   "devDependencies": {
     "@tauri-apps/cli": "3.0.0-alpha.5",
     "typescript": "7.0.2",
-    "vite": "8.3.4"
+    "vite": "8.3.5"
   }
 }

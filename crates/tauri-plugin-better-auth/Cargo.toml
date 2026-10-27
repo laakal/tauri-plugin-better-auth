@@ -44,12 +44,16 @@ reqwest = { version = "0.13", default-features = false, features = [
   "charset",
   "system-proxy",
 ] }
-rustls = { version = "0.23", default-features = false, features = [
+rustls = { version = "0.23.46", default-features = false, features = [
   "ring",
   "std",
   "tls12",
 ] }
 rustls-platform-verifier = "0.7"
+# Not used directly: raises the minimum version (RUSTSEC-2026-0382, certificate
+# verification accepting distrusted intermediates). `rustls` 0.23.46 above covers
+# RUSTSEC-2026-0285 and 0346-0349.
+rustls-webpki = { version = "0.103.16", default-features = false }
 sha2 = "0.11"
 base64 = "0.22"
 getrandom = "0.3"
