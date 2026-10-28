@@ -54,6 +54,9 @@ pub(crate) enum SessionCheck {
 
 pub(crate) struct HttpApi {
     client: Client,
+    /// Like `client`, without the total timeout: streamed bodies may run for as
+    /// long as data keeps arriving (the bridge times the headers and each gap).
+    stream_client: Client,
     base: Url,
     app_headers: AppHeaders,
 }
@@ -65,16 +68,20 @@ impl HttpApi {
         user_agent: &str,
         app_headers: AppHeaders,
     ) -> Result<Self> {
-        let client = Client::builder()
-            .tls_backend_preconfigured(crate::tls::client_config()?)
-            .redirect(Policy::none())
-            .connect_timeout(timeout.min(Duration::from_secs(10)))
-            .timeout(timeout)
-            .user_agent(user_agent)
-            .build()
-            .map_err(|error| Error::Config(format!("HTTP client setup failed: {error}")))?;
+        let builder = || -> Result<reqwest::ClientBuilder> {
+            Ok(Client::builder()
+                .tls_backend_preconfigured(crate::tls::client_config()?)
+                .redirect(Policy::none())
+                .connect_timeout(timeout.min(Duration::from_secs(10)))
+                .user_agent(user_agent))
+        };
+        let setup_failed =
+            |error: reqwest::Error| Error::Config(format!("HTTP client setup failed: {error}"));
+        let client = builder()?.timeout(timeout).build().map_err(setup_failed)?;
+        let stream_client = builder()?.build().map_err(setup_failed)?;
         Ok(Self {
             client,
+            stream_client,
             base,
             app_headers,
         })
@@ -82,6 +89,10 @@ impl HttpApi {
 
     pub fn client(&self) -> &Client {
         &self.client
+    }
+
+    pub fn stream_client(&self) -> &Client {
+        &self.stream_client
     }
 
     /// `base_url` + `path` (`path` starts with `/`).

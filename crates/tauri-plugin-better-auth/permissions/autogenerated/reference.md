@@ -11,6 +11,7 @@ auth bridge. The session token is never returned to the webview: no command read
 - `allow-get-session`
 - `allow-sign-out`
 - `allow-fetch`
+- `allow-fetch-stream`
 - `allow-fetch-cancel`
 
 ## Permission Table
@@ -122,6 +123,32 @@ Enables the fetch_cancel command without any pre-configured scope.
 <td>
 
 Denies the fetch_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`better-auth:allow-fetch-stream`
+
+</td>
+<td>
+
+Enables the fetch_stream command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`better-auth:deny-fetch-stream`
+
+</td>
+<td>
+
+Denies the fetch_stream command without any pre-configured scope.
 
 </td>
 </tr>

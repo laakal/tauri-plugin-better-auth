@@ -38,11 +38,24 @@ struct Harness {
 }
 
 fn build(uri: &str) -> (Arc<Bridge>, Arc<Controller>) {
+    build_with(uri, &[uri], None)
+}
+
+/// Auth server at `uri`, app APIs at `api_origins`.
+fn build_with(
+    uri: &str,
+    api_origins: &[&str],
+    stream_idle_timeout: Option<Duration>,
+) -> (Arc<Bridge>, Arc<Controller>) {
     let config = RawConfig {
         base_url: Some(format!("{uri}/api/auth")),
         sign_in_url: Some("http://localhost:3000/desktop".into()),
         scheme: Some("com.example.app".into()),
-        api_routes: vec![(uri.to_owned(), vec!["/api/".into()])],
+        api_routes: api_origins
+            .iter()
+            .map(|origin| ((*origin).to_owned(), vec!["/api/".into()]))
+            .collect(),
+        stream_idle_timeout,
         ..RawConfig::default()
     }
     .validate()
@@ -95,16 +108,19 @@ impl Harness {
         body: Option<BridgeBody>,
     ) -> Result<BridgeResponse> {
         self.bridge
-            .fetch(BridgeRequest {
-                id: 1,
-                url: self.url(path),
-                method: method.into(),
-                headers: headers
-                    .iter()
-                    .map(|(k, v)| ((*k).into(), (*v).into()))
-                    .collect(),
-                body,
-            })
+            .fetch(
+                "main",
+                BridgeRequest {
+                    id: 1,
+                    url: self.url(path),
+                    method: method.into(),
+                    headers: headers
+                        .iter()
+                        .map(|(k, v)| ((*k).into(), (*v).into()))
+                        .collect(),
+                    body,
+                },
+            )
             .await
     }
 
@@ -279,13 +295,16 @@ async fn other_urls_are_forbidden() {
     }
     let foreign = h
         .bridge
-        .fetch(BridgeRequest {
-            id: 2,
-            url: "https://evil.example/api/x".into(),
-            method: "GET".into(),
-            headers: vec![],
-            body: None,
-        })
+        .fetch(
+            "main",
+            BridgeRequest {
+                id: 2,
+                url: "https://evil.example/api/x".into(),
+                method: "GET".into(),
+                headers: vec![],
+                body: None,
+            },
+        )
         .await
         .unwrap();
     assert_eq!(foreign.status, 403);
@@ -530,17 +549,20 @@ async fn requests_can_be_aborted() {
     let url = h.url("/api/slow");
     let request = tokio::spawn(async move {
         bridge
-            .fetch(BridgeRequest {
-                id: 42,
-                url,
-                method: "GET".into(),
-                headers: vec![],
-                body: None,
-            })
+            .fetch(
+                "main",
+                BridgeRequest {
+                    id: 42,
+                    url,
+                    method: "GET".into(),
+                    headers: vec![],
+                    body: None,
+                },
+            )
             .await
     });
     tokio::time::sleep(Duration::from_millis(100)).await;
-    h.bridge.cancel(42);
+    h.bridge.cancel("main", 42);
     assert!(matches!(request.await.unwrap(), Err(Error::Aborted)));
 }
 
@@ -555,13 +577,16 @@ async fn network_failures_reject_like_fetch() {
     let uri = format!("http://127.0.0.1:{port}");
     let (bridge, _) = build(&uri);
     let result = bridge
-        .fetch(BridgeRequest {
-            id: 3,
-            url: format!("{uri}/api/devices"),
-            method: "GET".into(),
-            headers: vec![],
-            body: None,
-        })
+        .fetch(
+            "main",
+            BridgeRequest {
+                id: 3,
+                url: format!("{uri}/api/devices"),
+                method: "GET".into(),
+                headers: vec![],
+                body: None,
+            },
+        )
         .await;
     assert!(matches!(result, Err(Error::Network(_))));
 }
@@ -571,4 +596,321 @@ async fn disallowed_methods_are_refused() {
     let h = Harness::new().await;
     let response = h.fetch("TRACE", "/api/devices", &[], None).await.unwrap();
     assert_eq!(response.status, 400);
+}
+
+// Streaming (`fetch_stream`).
+
+/// A one-connection HTTP server: answers with a chunked `text/event-stream`
+/// body, sending each chunk after its delay, and ends the body unless
+/// `hold_open`. Reports the raw request head and when the client hangs up.
+struct StreamServer {
+    uri: String,
+    request: oneshot::Receiver<String>,
+    closed: oneshot::Receiver<()>,
+}
+
+async fn stream_server(chunks: Vec<(u64, &'static str)>, hold_open: bool) -> StreamServer {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let uri = format!("http://{}", listener.local_addr().unwrap());
+    let (request_tx, request) = oneshot::channel();
+    let (closed_tx, closed) = oneshot::channel();
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut head = Vec::new();
+        let mut buf = [0u8; 4096];
+        while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+            match socket.read(&mut buf).await {
+                Ok(0) | Err(_) => return,
+                Ok(n) => head.extend_from_slice(&buf[..n]),
+            }
+        }
+        let _ = request_tx.send(String::from_utf8_lossy(&head).into_owned());
+        socket
+            .write_all(
+                b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nx-stream: yes\r\n\
+                  set-cookie: sid=secret\r\ntransfer-encoding: chunked\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        for (delay, data) in chunks {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+            let frame = format!("{:x}\r\n{data}\r\n", data.len());
+            if socket.write_all(frame.as_bytes()).await.is_err() {
+                let _ = closed_tx.send(());
+                return;
+            }
+        }
+        if !hold_open {
+            let _ = socket.write_all(b"0\r\n\r\n").await;
+        }
+        loop {
+            match socket.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+        }
+        let _ = closed_tx.send(());
+    });
+    StreamServer {
+        uri,
+        request,
+        closed,
+    }
+}
+
+fn collector() -> (
+    StreamSink,
+    tokio::sync::mpsc::UnboundedReceiver<StreamEvent>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    (Box::new(move |event| tx.send(event).is_ok()), rx)
+}
+
+fn stream_request(id: u32, url: String) -> BridgeRequest {
+    BridgeRequest {
+        id,
+        url,
+        method: "GET".into(),
+        headers: vec![],
+        body: None,
+    }
+}
+
+impl Harness {
+    /// Auth on the mock server, plus an app API at `api_origin`.
+    async fn with_api(api_origin: &str, stream_idle_timeout: Option<Duration>) -> Self {
+        let server = MockServer::start().await;
+        let uri = server.uri();
+        let (bridge, controller) = build_with(&uri, &[&uri, api_origin], stream_idle_timeout);
+        Self {
+            server,
+            bridge,
+            controller,
+        }
+    }
+}
+
+async fn next(rx: &mut tokio::sync::mpsc::UnboundedReceiver<StreamEvent>) -> StreamEvent {
+    tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("a stream event")
+        .expect("the stream is still open")
+}
+
+#[tokio::test]
+async fn api_bodies_stream_chunk_by_chunk_with_the_token() {
+    let mut api = stream_server(vec![(0, "data: a\n\n"), (300, "data: b\n\n")], false).await;
+    let h = Harness::with_api(&api.uri, None).await;
+    h.sign_in().await;
+    let (sink, mut rx) = collector();
+
+    let head = h
+        .bridge
+        .fetch_stream(
+            "main",
+            stream_request(1, format!("{}/api/chat", api.uri)),
+            sink,
+        )
+        .await
+        .unwrap();
+    assert!(head.streamed);
+    assert_eq!(head.status, 200);
+    assert_eq!(head.body, None);
+    assert!(has_header(&head, "x-stream"));
+    assert!(!has_header(&head, "set-cookie"));
+
+    // The first chunk arrives before the server has written the second.
+    let first = tokio::time::timeout(Duration::from_millis(250), rx.recv())
+        .await
+        .expect("the first chunk, before the second is sent");
+    assert_eq!(first, Some(StreamEvent::Chunk(b"data: a\n\n".to_vec())));
+    assert_eq!(
+        next(&mut rx).await,
+        StreamEvent::Chunk(b"data: b\n\n".to_vec())
+    );
+    assert_eq!(next(&mut rx).await, StreamEvent::End);
+
+    let request = (&mut api.request).await.unwrap().to_ascii_lowercase();
+    assert!(request.contains("authorization: bearer tok-1"));
+}
+
+#[tokio::test]
+async fn a_stream_may_run_longer_than_the_request_timeout() {
+    // The harness client times out after 2 s; this body takes 2.4 s.
+    let api = stream_server(vec![(0, "1"), (1200, "2"), (1200, "3")], false).await;
+    let h = Harness::with_api(&api.uri, None).await;
+    let (sink, mut rx) = collector();
+    h.bridge
+        .fetch_stream(
+            "main",
+            stream_request(1, format!("{}/api/chat", api.uri)),
+            sink,
+        )
+        .await
+        .unwrap();
+    for expected in ["1", "2", "3"] {
+        assert_eq!(next(&mut rx).await, StreamEvent::Chunk(expected.into()));
+    }
+    assert_eq!(next(&mut rx).await, StreamEvent::End);
+}
+
+#[tokio::test]
+async fn an_idle_stream_fails_after_the_idle_timeout() {
+    let api = stream_server(vec![(0, "data: a\n\n")], true).await;
+    let h = Harness::with_api(&api.uri, Some(Duration::from_secs(1))).await;
+    let (sink, mut rx) = collector();
+    h.bridge
+        .fetch_stream(
+            "main",
+            stream_request(1, format!("{}/api/chat", api.uri)),
+            sink,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        next(&mut rx).await,
+        StreamEvent::Chunk(b"data: a\n\n".to_vec())
+    );
+    match next(&mut rx).await {
+        StreamEvent::Error { code, message } => {
+            assert_eq!(code, "NETWORK");
+            assert!(message.contains("no data for 1 seconds"), "{message}");
+        }
+        other => panic!("expected an error, got {other:?}"),
+    }
+    // The bridge hangs up on the server.
+    tokio::time::timeout(Duration::from_secs(5), api.closed)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn cancel_stops_a_running_stream_and_closes_the_connection() {
+    let api = stream_server(vec![(0, "data: a\n\n")], true).await;
+    let h = Harness::with_api(&api.uri, None).await;
+    let (sink, mut rx) = collector();
+    h.bridge
+        .fetch_stream(
+            "main",
+            stream_request(7, format!("{}/api/chat", api.uri)),
+            sink,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        next(&mut rx).await,
+        StreamEvent::Chunk(b"data: a\n\n".to_vec())
+    );
+
+    h.bridge.cancel("main", 7);
+    tokio::time::timeout(Duration::from_secs(5), api.closed)
+        .await
+        .unwrap()
+        .unwrap();
+    // No end or error event after a cancel: the webview already knows.
+    assert_eq!(rx.recv().await, None);
+}
+
+#[tokio::test]
+async fn a_stream_stops_when_nobody_listens() {
+    let api = stream_server(vec![(0, "1"), (100, "2")], true).await;
+    let h = Harness::with_api(&api.uri, None).await;
+    let sink: StreamSink = Box::new(|_| false);
+    h.bridge
+        .fetch_stream(
+            "main",
+            stream_request(1, format!("{}/api/chat", api.uri)),
+            sink,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), api.closed)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn auth_routes_are_never_streamed() {
+    let h = Harness::new().await;
+    let (sink, mut rx) = collector();
+    let response = h
+        .bridge
+        .fetch_stream(
+            "main",
+            stream_request(1, h.url("/api/auth/get-session")),
+            sink,
+        )
+        .await
+        .unwrap();
+    assert!(!response.streamed);
+    assert_eq!(body_json(&response), Value::Null);
+    assert_eq!(rx.recv().await, None);
+}
+
+#[tokio::test]
+async fn bodiless_api_responses_are_not_streamed() {
+    let h = Harness::new().await;
+    Mock::given(method("DELETE"))
+        .and(path("/api/things/1"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&h.server)
+        .await;
+    let (sink, _rx) = collector();
+    let response = h
+        .bridge
+        .fetch_stream(
+            "main",
+            BridgeRequest {
+                method: "DELETE".into(),
+                ..stream_request(1, h.url("/api/things/1"))
+            },
+            sink,
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status, 204);
+    assert!(!response.streamed);
+    assert_eq!(response.body, None);
+}
+
+#[tokio::test]
+async fn streams_still_refuse_urls_outside_the_allowlist() {
+    let h = Harness::new().await;
+    let (sink, _rx) = collector();
+    let response = h
+        .bridge
+        .fetch_stream(
+            "main",
+            stream_request(1, "https://elsewhere.example.com/api/chat".into()),
+            sink,
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status, 403);
+    assert_eq!(body_json(&response)["code"], "FORBIDDEN_URL");
+}
+
+#[tokio::test]
+async fn cancel_only_reaches_the_window_that_sent_the_request() {
+    let h = Harness::new().await;
+    Mock::given(method("GET"))
+        .and(path("/api/slow"))
+        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(5)))
+        .mount(&h.server)
+        .await;
+    let bridge = h.bridge.clone();
+    let url = h.url("/api/slow");
+    let request = tokio::spawn(async move { bridge.fetch("main", stream_request(42, url)).await });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Another window's request 42 is a different request.
+    h.bridge.cancel("settings", 42);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!request.is_finished());
+
+    h.bridge.cancel("main", 42);
+    assert!(matches!(request.await.unwrap(), Err(Error::Aborted)));
 }

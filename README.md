@@ -84,14 +84,14 @@ Exact formats are in [PROTOCOL.md](PROTOCOL.md).
 Some of these are gaps ([Roadmap](#roadmap)); most are the security model,
 on purpose.
 
-| Area                  | Status                                                                                                                                                                                                                                                                        |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platforms             | Desktop only: macOS, Windows, Linux. iOS and Android are not supported yet, on either line.                                                                                                                                                                                   |
-| Streaming             | Not yet. `tauriFetch` buffers each request and response (4 MiB per request, 16 MiB per API response), and `timeout` (15 s) covers the whole response, body included. SSE and streamed AI answers arrive in one piece at the end, and fail if they take longer than `timeout`. |
-| Sign-in methods       | All of them in the browser (`requestAuth()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                                                                                                                      |
-| Better Auth endpoints | The webview reaches [eight routes](#the-auth-bridge). Others (a plugin's endpoints, `/change-password`…) need `auth_route(...)`; `/tauri/*` never. By design.                                                                                                                 |
-| API origins           | The bearer token goes only to the origins and path prefixes in `api_routes` (call it once per domain). Any other URL returns `403 FORBIDDEN_URL`. By design.                                                                                                                  |
-| Redirects             | Never followed, so a `307` cannot carry the token elsewhere. Auth responses must be uncompressed JSON. By design.                                                                                                                                                             |
+| Area                  | Status                                                                                                                                                                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platforms             | Desktop only: macOS, Windows, Linux. iOS and Android are not supported yet, on either line.                                                                                                                                        |
+| Streaming             | App API responses stream (SSE, AI SDK `streamText`); auth responses are read whole, since Rust scrubs them. Request bodies are buffered (4 MiB). There is no backpressure: chunks queue in the webview until your code reads them. |
+| Sign-in methods       | All of them in the browser (`requestAuth()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                                                                           |
+| Better Auth endpoints | The webview reaches [eight routes](#the-auth-bridge). Others (a plugin's endpoints, `/change-password`…) need `auth_route(...)`; `/tauri/*` never. By design.                                                                      |
+| API origins           | The bearer token goes only to the origins and path prefixes in `api_routes` (call it once per domain). Any other URL returns `403 FORBIDDEN_URL`. By design.                                                                       |
+| Redirects             | Never followed, so a `307` cannot carry the token elsewhere. Auth responses must be uncompressed JSON. By design.                                                                                                                  |
 
 ## Requirements
 
@@ -321,9 +321,10 @@ pub fn run() {
 ```
 
 `better-auth:default` allows `request_auth`, `authenticate`, `cancel_auth`,
-`get_session`, `sign_out`, `fetch` and `fetch_cancel`. You can list the
-individual `better-auth:allow-*` permissions instead. No command returns the
-token.
+`get_session`, `sign_out`, `fetch`, `fetch_stream` and `fetch_cancel`. You can
+list the individual `better-auth:allow-*` permissions instead; without
+`allow-fetch-stream`, `tauriFetch` falls back to buffered responses. No command
+returns the token.
 
 **CSP.** The webview only talks to IPC, so `connect-src` does not need your API
 origin:
@@ -384,6 +385,7 @@ disappear.
 - `getSession({ cachedOnly })`
 - `signOut`
 - events: `onAuthenticated`, `onSignedOut({ reason })`, `onAuthError`
+- `tauriFetch`, and `createTauriFetch({ stream })` for a variant
 
 `getSession({ cachedOnly: true })` answers from memory, which suits startup route
 guards. Without it, the session is checked with the server. When the server is
@@ -397,8 +399,38 @@ const link = new OpenAPILink(contract, { url, fetch: tauriFetch }); // oRPC
 const api = ky.create({ fetch: tauriFetch });
 ```
 
-`tauriFetch` buffers bodies: text and binary work, streaming does not (yet;
-see [Limitations](#limitations)).
+**Streaming.** App API responses stream: `tauriFetch` resolves once the
+headers arrive, and the body is read as Rust receives it, over a Tauri channel.
+SSE and AI SDK streams work as with a browser `fetch`:
+
+```ts
+// AI SDK UI: give the chat transport tauriFetch.
+const chat = useChat({
+  transport: new DefaultChatTransport({
+    api: 'https://api.example.com/api/chat',
+    fetch: tauriFetch,
+  }),
+});
+
+// Or read the body yourself (SSE, NDJSON, …).
+const res = await tauriFetch('https://api.example.com/api/events');
+const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+for (let r = await reader.read(); !r.done; r = await reader.read()) {
+  render(r.value);
+}
+```
+
+- `timeout` covers the wait for the response headers. After that a stream runs
+  for as long as data keeps coming; it fails after `stream_idle_timeout` (60 s)
+  without a chunk. Send heartbeats on quiet SSE connections.
+- `abort()` and `res.body.cancel()` stop the request in Rust and close the
+  connection.
+- Auth responses are read whole and scrubbed first. Request bodies are
+  buffered.
+- For a client that should read every response whole, create a buffered
+  variant: `const bufferedFetch = createTauriFetch({ stream: false })`. Errors
+  then surface at the call rather than while reading the body, and API
+  responses are capped at 16 MiB.
 
 ## The auth bridge
 
@@ -426,7 +458,9 @@ app headers. Everything else returns `403 FORBIDDEN_URL`.
 - Strips `set-cookie` and `set-auth-token` from responses.
 - Requires auth responses to be uncompressed JSON. Anything else returns
   `502 BRIDGE_UNPARSEABLE`.
-- Caps bodies: 4 MiB per request, 16 MiB per API response.
+- Caps bodies: 4 MiB per request, 4 MiB per auth response. App API responses
+  stream with no total cap (16 MiB when streaming is not allowed, see
+  [Capabilities](#3-tauri-app)).
 
 **Scrubbing.** "Scrubbed" means the keys `token`, `accessToken`, `refreshToken`,
 `idToken` (and snake_case forms) are removed at any depth. Top-level `url` and
@@ -514,7 +548,8 @@ the whole callback link.
 | `auth_route(method, path, kind)` | none                     | Extends the bridge allowlist                                 |
 | `transport(t)`                   | `Auto`                   |                                                              |
 | `pending_ttl(d)`                 | 10 min                   | 1–60 min                                                     |
-| `timeout(d)`                     | 15 s                     | Per request                                                  |
+| `timeout(d)`                     | 15 s                     | Per request; for a streamed response, until its headers      |
+| `stream_idle_timeout(d)`         | 60 s                     | Longest gap between two chunks of a stream; 1 s–60 min       |
 | `main_window(label)`             | `"main"`                 | Focused when a sign-in returns                               |
 | `store(impl SessionStore)`       | OS keychain              | `KeyringStore`, `MemoryStore`, or your own (e.g. Stronghold) |
 | `headers(fn)`                    | none                     | Headers sent with every auth/API request (e.g. device id)    |
@@ -667,19 +702,7 @@ No dates: items ship when they are ready, in the order below. Open an
 [issue](https://github.com/laakal/tauri-plugin-better-auth/issues) to ask for
 something or to help.
 
-**Next: streaming responses** (a minor release on both lines)
-
-- `tauriFetch` returns a `Response` whose body streams, for `api_routes`
-  responses: SSE, AI SDK `streamText`, large downloads.
-- Chunks travel from Rust over a Tauri channel. `abort()` stops the request in
-  Rust.
-- `timeout` then covers the wait for response headers; a separate idle timeout
-  covers the gap between chunks, so a long answer streams for as long as it
-  keeps sending.
-- Unchanged: auth routes stay buffered and scrubbed, and the allowlists,
-  header filtering and the no-redirect rule apply as today.
-
-**Then: Tauri 3 stable**
+**Next: Tauri 3 stable**
 
 - The Tauri 3 line (`0.2.x`, npm tag `next`) leaves pre-release once Tauri 3
   is stable.

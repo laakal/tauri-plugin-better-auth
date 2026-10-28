@@ -12,5 +12,6 @@ permissions = [
   "allow-get-session",
   "allow-sign-out",
   "allow-fetch",
+  "allow-fetch-stream",
   "allow-fetch-cancel",
 ]
