@@ -7,6 +7,7 @@ const COMMANDS: &[&str] = &[
     "get_session",
     "sign_out",
     "fetch",
+    "fetch_stream",
     "fetch_cancel",
 ];
 

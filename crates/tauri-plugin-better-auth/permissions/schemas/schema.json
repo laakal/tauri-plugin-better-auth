@@ -343,6 +343,18 @@
           "markdownDescription": "Denies the fetch_cancel command without any pre-configured scope."
         },
         {
+          "description": "Enables the fetch_stream command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-fetch-stream",
+          "markdownDescription": "Enables the fetch_stream command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the fetch_stream command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-fetch-stream",
+          "markdownDescription": "Denies the fetch_stream command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_session command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-session",
@@ -379,10 +391,10 @@
           "markdownDescription": "Denies the sign_out command without any pre-configured scope."
         },
         {
-          "description": "Browser sign-in, the cached session, sign-out, and authenticated requests through the\nauth bridge. The session token is never returned to the webview: no command reads it.\n\n#### This default permission set includes:\n\n- `allow-request-auth`\n- `allow-authenticate`\n- `allow-cancel-auth`\n- `allow-get-session`\n- `allow-sign-out`\n- `allow-fetch`\n- `allow-fetch-cancel`",
+          "description": "Browser sign-in, the cached session, sign-out, and authenticated requests through the\nauth bridge. The session token is never returned to the webview: no command reads it.\n\n#### This default permission set includes:\n\n- `allow-request-auth`\n- `allow-authenticate`\n- `allow-cancel-auth`\n- `allow-get-session`\n- `allow-sign-out`\n- `allow-fetch`\n- `allow-fetch-stream`\n- `allow-fetch-cancel`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Browser sign-in, the cached session, sign-out, and authenticated requests through the\nauth bridge. The session token is never returned to the webview: no command reads it.\n\n#### This default permission set includes:\n\n- `allow-request-auth`\n- `allow-authenticate`\n- `allow-cancel-auth`\n- `allow-get-session`\n- `allow-sign-out`\n- `allow-fetch`\n- `allow-fetch-cancel`"
+          "markdownDescription": "Browser sign-in, the cached session, sign-out, and authenticated requests through the\nauth bridge. The session token is never returned to the webview: no command reads it.\n\n#### This default permission set includes:\n\n- `allow-request-auth`\n- `allow-authenticate`\n- `allow-cancel-auth`\n- `allow-get-session`\n- `allow-sign-out`\n- `allow-fetch`\n- `allow-fetch-stream`\n- `allow-fetch-cancel`"
         }
       ]
     }

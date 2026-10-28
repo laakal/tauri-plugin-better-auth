@@ -220,8 +220,17 @@ impl<R: Runtime> Builder<R> {
     }
 
     /// Timeout of each request to the auth server (15 seconds by default).
+    /// For a streamed API response it covers the wait for the headers; see
+    /// [`Builder::stream_idle_timeout`] for the body.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.raw.timeout = Some(timeout);
+        self
+    }
+
+    /// Longest gap between two chunks of a streamed API response before the
+    /// stream fails (1 second to 60 minutes, 60 seconds by default).
+    pub fn stream_idle_timeout(mut self, timeout: Duration) -> Self {
+        self.raw.stream_idle_timeout = Some(timeout);
         self
     }
 
@@ -293,6 +302,7 @@ impl<R: Runtime> Builder<R> {
                 commands::get_session,
                 commands::sign_out,
                 commands::fetch,
+                commands::fetch_stream,
                 commands::fetch_cancel,
             ])
             .setup(move |app, _api| {

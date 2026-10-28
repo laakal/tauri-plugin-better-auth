@@ -1,10 +1,15 @@
 //! Webview commands. Thin wrappers: the logic lives in the controller and the
 //! bridge. No command returns a token.
 
-use tauri::{command, AppHandle, Runtime};
+use serde_json::json;
+use tauri::{
+    command,
+    ipc::{Channel, InvokeResponseBody},
+    AppHandle, Runtime, Webview,
+};
 
 use crate::{
-    bridge::{BridgeRequest, BridgeResponse},
+    bridge::{BridgeRequest, BridgeResponse, StreamEvent, StreamSink},
     models::{RequestAuthOptions, RequestAuthResult, SessionSnapshot},
     BetterAuthExt, Result,
 };
@@ -51,13 +56,46 @@ pub(crate) async fn sign_out<R: Runtime>(app: AppHandle<R>) -> Result<()> {
 #[command]
 pub(crate) async fn fetch<R: Runtime>(
     app: AppHandle<R>,
+    webview: Webview<R>,
     request: BridgeRequest,
 ) -> Result<BridgeResponse> {
-    app.better_auth().bridge.fetch(request).await
+    app.better_auth()
+        .bridge
+        .fetch(webview.label(), request)
+        .await
+}
+
+/// Like `fetch`; an app API body then arrives on `channel`: raw chunks, then
+/// `{ "event": "end" }` or `{ "event": "error", code, message }`.
+#[command]
+pub(crate) async fn fetch_stream<R: Runtime>(
+    app: AppHandle<R>,
+    webview: Webview<R>,
+    request: BridgeRequest,
+    channel: Channel<InvokeResponseBody>,
+) -> Result<BridgeResponse> {
+    let sink: StreamSink = Box::new(move |event| {
+        let body = match event {
+            StreamEvent::Chunk(bytes) => InvokeResponseBody::Raw(bytes),
+            StreamEvent::End => InvokeResponseBody::Json(json!({ "event": "end" }).to_string()),
+            StreamEvent::Error { code, message } => InvokeResponseBody::Json(
+                json!({ "event": "error", "code": code, "message": message }).to_string(),
+            ),
+        };
+        channel.send(body).is_ok()
+    });
+    app.better_auth()
+        .bridge
+        .fetch_stream(webview.label(), request, sink)
+        .await
 }
 
 #[command]
-pub(crate) async fn fetch_cancel<R: Runtime>(app: AppHandle<R>, id: u32) -> Result<()> {
-    app.better_auth().bridge.cancel(id);
+pub(crate) async fn fetch_cancel<R: Runtime>(
+    app: AppHandle<R>,
+    webview: Webview<R>,
+    id: u32,
+) -> Result<()> {
+    app.better_auth().bridge.cancel(webview.label(), id);
     Ok(())
 }

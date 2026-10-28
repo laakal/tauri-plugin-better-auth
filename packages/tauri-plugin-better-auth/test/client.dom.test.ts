@@ -4,6 +4,7 @@ import { createAuthClient } from 'better-auth/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  createTauriFetch,
   isTauriAuthError,
   onAuthenticated,
   onSignedOut,
@@ -59,7 +60,7 @@ afterEach(() => {
 describe('tauriFetch', () => {
   it('sends the request through the bridge and rebuilds the response', async () => {
     mock((cmd) =>
-      cmd === 'plugin:better-auth|fetch'
+      cmd === 'plugin:better-auth|fetch_stream'
         ? bridged(201, { ok: true }, [
             ['content-type', 'application/json'],
             ['x-request-id', 'r1'],
@@ -138,7 +139,7 @@ describe('tauriFetch', () => {
   it('cancels the bridged request on abort', async () => {
     let release: (value: unknown) => void = () => {};
     mock((cmd) => {
-      if (cmd === 'plugin:better-auth|fetch') {
+      if (cmd === 'plugin:better-auth|fetch_stream') {
         return new Promise((resolve) => {
           release = resolve;
         });
@@ -162,6 +163,125 @@ describe('tauriFetch', () => {
     expect(cancel!.payload!.id).toBe(
       (calls[0]!.payload!.request as { id: number }).id,
     );
+  });
+});
+
+describe('tauriFetch streaming', () => {
+  const streamedHead = {
+    status: 200,
+    statusText: 'OK',
+    headers: [['content-type', 'text/event-stream']],
+    body: null,
+    streamed: true,
+  };
+
+  /** Sends message `index` on the request's channel, as Rust would. */
+  function emitChunk(payload: any, index: number, message: unknown) {
+    (window as any).__TAURI_INTERNALS__.runCallback(payload.channel.id, {
+      message,
+      index,
+    });
+  }
+
+  const bytes = (text: string) => new TextEncoder().encode(text).buffer;
+  const text = (chunk: Uint8Array | undefined) =>
+    new TextDecoder().decode(chunk);
+
+  it('streams app API bodies as they arrive', async () => {
+    let payload: any;
+    mock((cmd, p) => {
+      if (cmd !== 'plugin:better-auth|fetch_stream') return null;
+      payload = p;
+      // A chunk may arrive before the command answers.
+      emitChunk(p, 0, bytes('data: a\n\n'));
+      return streamedHead;
+    });
+    const response = await tauriFetch('https://api.example.com/api/chat');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('text/event-stream');
+
+    const reader = response.body!.getReader();
+    expect(text((await reader.read()).value)).toBe('data: a\n\n');
+    // IPC fallbacks deliver bytes as a number array.
+    emitChunk(payload, 1, [...new TextEncoder().encode('data: b\n\n')]);
+    expect(text((await reader.read()).value)).toBe('data: b\n\n');
+    emitChunk(payload, 2, { event: 'end' });
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  it('errors the body with a TypeError when the stream breaks off', async () => {
+    let payload: any;
+    mock((cmd, p) => {
+      if (cmd !== 'plugin:better-auth|fetch_stream') return null;
+      payload = p;
+      return streamedHead;
+    });
+    const response = await tauriFetch('https://api.example.com/api/chat');
+    const reader = response.body!.getReader();
+    emitChunk(payload, 0, {
+      event: 'error',
+      code: 'NETWORK',
+      message: 'the server sent no data for 60 seconds',
+    });
+    await expect(reader.read()).rejects.toThrow(TypeError);
+  });
+
+  it('aborting mid-stream errors the body and cancels in Rust', async () => {
+    mock((cmd) =>
+      cmd === 'plugin:better-auth|fetch_stream' ? streamedHead : null,
+    );
+    const controller = new AbortController();
+    const response = await tauriFetch('https://api.example.com/api/chat', {
+      signal: controller.signal,
+    });
+    const reader = response.body!.getReader();
+    controller.abort();
+    await expect(reader.read()).rejects.toMatchObject({ name: 'AbortError' });
+    const cancel = calls.find(
+      (c) => c.cmd === 'plugin:better-auth|fetch_cancel',
+    );
+    expect(cancel!.payload!.id).toBe(
+      (calls[0]!.payload!.request as { id: number }).id,
+    );
+  });
+
+  it('cancelling the body cancels the request in Rust', async () => {
+    mock((cmd) =>
+      cmd === 'plugin:better-auth|fetch_stream' ? streamedHead : null,
+    );
+    const response = await tauriFetch('https://api.example.com/api/chat');
+    await response.body!.cancel();
+    expect(calls.map((c) => c.cmd)).toContain(
+      'plugin:better-auth|fetch_cancel',
+    );
+  });
+
+  it('createTauriFetch({ stream: false }) reads every response whole', async () => {
+    mock(() => bridged(200, { ok: true }));
+    const buffered = createTauriFetch({ stream: false });
+    const response = await buffered('https://api.example.com/api/things');
+    expect(await response.json()).toEqual({ ok: true });
+    expect(calls.map((c) => c.cmd)).toEqual(['plugin:better-auth|fetch']);
+  });
+
+  it('falls back to the buffered fetch when fetch_stream is refused', async () => {
+    // A fresh module: the fallback is remembered for the page.
+    vi.resetModules();
+    const { tauriFetch: freshFetch } = await import('../src/client/fetch');
+    mock((cmd) => {
+      if (cmd === 'plugin:better-auth|fetch_stream') {
+        throw 'better-auth.fetch_stream not allowed. Command not found';
+      }
+      return bridged(200, { ok: true });
+    });
+    const first = await freshFetch('https://api.example.com/api/things');
+    expect(await first.json()).toEqual({ ok: true });
+    await freshFetch('https://api.example.com/api/things');
+    expect(calls.map((c) => c.cmd)).toEqual([
+      'plugin:better-auth|fetch_stream',
+      'plugin:better-auth|fetch',
+      'plugin:better-auth|fetch',
+    ]);
   });
 });
 
@@ -210,7 +330,7 @@ describe('withTauri', () => {
 
   it('never navigates the webview on { url, redirect: true }', async () => {
     mock((cmd) =>
-      cmd === 'plugin:better-auth|fetch'
+      cmd === 'plugin:better-auth|fetch_stream'
         ? bridged(200, {
             url: 'https://evil.example/',
             redirect: true,
@@ -225,15 +345,16 @@ describe('withTauri', () => {
       password: 'secret-1234',
     });
     expect(window.location.href).toBe(before);
-    const request = calls.find((c) => c.cmd === 'plugin:better-auth|fetch')!
-      .payload!.request as { url: string };
+    const request = calls.find(
+      (c) => c.cmd === 'plugin:better-auth|fetch_stream',
+    )!.payload!.request as { url: string };
     expect(request.url).toBe(`${baseURL}/sign-in/email`);
   });
 
   it('refreshes useSession when a browser sign-in completes', async () => {
     let signedIn = false;
     mock((cmd, payload) => {
-      if (cmd !== 'plugin:better-auth|fetch') return null;
+      if (cmd !== 'plugin:better-auth|fetch_stream') return null;
       const { url } = payload.request as { url: string };
       if (url.endsWith('/get-session')) {
         return bridged(

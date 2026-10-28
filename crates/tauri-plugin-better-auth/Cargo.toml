@@ -73,7 +73,9 @@ tauri-plugin = { version = "2.5", features = ["build"] }
 [dev-dependencies]
 tauri = { version = "2.11", default-features = false, features = ["test"] }
 tokio = { version = "1", features = [
+  "io-util",
   "macros",
+  "net",
   "rt-multi-thread",
   "sync",
   "time",

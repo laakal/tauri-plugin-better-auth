@@ -5,6 +5,23 @@ Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
 ## 0.1.2 (unreleased)
 
+**Streaming responses.** Protocol v1, unchanged.
+
+- `tauriFetch` streams app API responses (`api_routes`): it resolves when the
+  headers arrive and the body follows chunk by chunk over a Tauri channel. SSE
+  and AI SDK streams work. Auth responses are still read whole and scrubbed.
+- New command `fetch_stream`, included in `better-auth:default`. A capability
+  that lists permissions one by one needs `better-auth:allow-fetch-stream`;
+  without it `tauriFetch` falls back to buffered responses.
+- `timeout` now covers a streamed response until its headers. New
+  `Builder::stream_idle_timeout` (60 s by default) ends a stream that sends
+  nothing for that long. Streamed bodies have no total size cap.
+- `abort()` and cancelling the body stop the request in Rust and close the
+  connection.
+- `createTauriFetch({ stream: false })` creates a buffered `fetch` for clients
+  that should read every response whole. `tauriFetch` is `createTauriFetch()`.
+- Fix: in-flight requests are tracked per window, so an abort in one window
+  can no longer cancel another window's request with the same id.
 - The npm package depends on `zod ^4.5.4` (Better Auth's own range) instead of
   exactly `4.6.7`, so apps share one zod copy with Better Auth.
 - README: a Limitations section (platforms, streaming, sign-in methods in the

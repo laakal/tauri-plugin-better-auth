@@ -29,7 +29,8 @@ export {
   onSignedOut,
 } from './events';
 export type { SignOutReason, TauriAuthErrorEvent } from './events';
-export { tauriFetch } from './fetch';
+export { createTauriFetch, tauriFetch } from './fetch';
+export type { TauriFetchOptions } from './fetch';
 export { tauriClient, withTauri } from './plugin';
 export type { WithTauri } from './plugin';
 export { asTauriClient } from './types';

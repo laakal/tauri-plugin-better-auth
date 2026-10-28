@@ -91,6 +91,7 @@ pub(crate) struct RawConfig {
     pub transport: Transport,
     pub pending_ttl: Option<Duration>,
     pub timeout: Option<Duration>,
+    pub stream_idle_timeout: Option<Duration>,
     pub main_window: Option<String>,
 }
 
@@ -108,6 +109,8 @@ pub(crate) struct Config {
     pub transport: Transport,
     pub pending_ttl: Duration,
     pub timeout: Duration,
+    /// Longest gap between two chunks of a streamed response.
+    pub stream_idle_timeout: Duration,
     pub main_window: String,
 }
 
@@ -188,6 +191,14 @@ impl RawConfig {
                 "timeout must be between 1 and 120 seconds".into(),
             ));
         }
+        let stream_idle_timeout = self.stream_idle_timeout.unwrap_or(Duration::from_secs(60));
+        if stream_idle_timeout < Duration::from_secs(1)
+            || stream_idle_timeout > Duration::from_secs(3600)
+        {
+            return Err(Error::Config(
+                "stream_idle_timeout must be between 1 second and 60 minutes".into(),
+            ));
+        }
 
         Ok(Config {
             base_url,
@@ -200,6 +211,7 @@ impl RawConfig {
             transport: self.transport,
             pending_ttl,
             timeout,
+            stream_idle_timeout,
             main_window: self.main_window.unwrap_or_else(|| "main".into()),
         })
     }
@@ -561,5 +573,24 @@ mod tests {
         let mut config = raw();
         config.timeout = Some(Duration::from_secs(600));
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn bounds_the_stream_idle_timeout() {
+        assert_eq!(
+            raw().validate().unwrap().stream_idle_timeout,
+            Duration::from_secs(60)
+        );
+        for invalid in [Duration::from_millis(500), Duration::from_secs(3601)] {
+            let mut config = raw();
+            config.stream_idle_timeout = Some(invalid);
+            assert!(config.validate().is_err());
+        }
+        let mut config = raw();
+        config.stream_idle_timeout = Some(Duration::from_secs(600));
+        assert_eq!(
+            config.validate().unwrap().stream_idle_timeout,
+            Duration::from_secs(600)
+        );
     }
 }

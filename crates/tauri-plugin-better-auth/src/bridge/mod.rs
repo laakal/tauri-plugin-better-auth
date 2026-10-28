@@ -4,11 +4,23 @@
 //! Contract violations come back as HTTP-shaped JSON errors (`{ code,
 //! message }`), so Better Auth and oRPC clients surface them normally.
 //! Network failures and aborts reject the call, like a browser `fetch`.
+//!
+//! [`Bridge::fetch_stream`] returns an app API response as soon as its headers
+//! arrive and delivers the body chunk by chunk. Auth routes are always read
+//! whole, because their bodies are scrubbed before the webview sees them.
 
 pub(crate) mod projection;
 pub(crate) mod routes;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::{
@@ -17,6 +29,7 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::{sync::oneshot, task::JoinHandle};
 use url::Url;
 
 use crate::{
@@ -78,6 +91,47 @@ pub struct BridgeResponse {
     pub headers: Vec<(String, String)>,
     /// Response body, if any.
     pub body: Option<BridgeBody>,
+    /// The body follows as [`StreamEvent`]s (only from [`Bridge::fetch_stream`]).
+    pub streamed: bool,
+}
+
+/// What a streamed response body sends after the headers.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum StreamEvent {
+    /// The next bytes of the body.
+    Chunk(Vec<u8>),
+    /// The body is complete.
+    End,
+    /// The body broke off (network failure or idle timeout).
+    Error { code: String, message: String },
+}
+
+/// Receives a streamed body. Returns `false` once nobody is listening any
+/// more (the webview went away), which stops the request.
+pub(crate) type StreamSink = Box<dyn Fn(StreamEvent) -> bool + Send + Sync>;
+
+/// A route's answer: complete, or headers with the body still to read.
+enum Outcome {
+    Done(BridgeResponse),
+    Stream(BridgeResponse, Response),
+}
+
+/// In-flight requests are keyed by window and request id: every window
+/// numbers its own requests.
+type InflightKey = (String, u32);
+
+/// Removes its request from the in-flight table when the task ends or is
+/// aborted, unless a newer request has taken the same key.
+struct InflightGuard {
+    bridge: Arc<Bridge>,
+    key: InflightKey,
+    token: u64,
+}
+
+impl Drop for InflightGuard {
+    fn drop(&mut self) {
+        self.bridge.forget(&self.key, self.token);
+    }
 }
 
 /// Request headers the webview may never set.
@@ -126,6 +180,7 @@ fn json_response(status: StatusCode, body: &Value) -> BridgeResponse {
         status_text: status.canonical_reason().unwrap_or_default().to_owned(),
         headers: vec![("content-type".into(), "application/json".into())],
         body: Some(BridgeBody::Text(body.to_string())),
+        streamed: false,
     }
 }
 
@@ -172,11 +227,7 @@ async fn read_capped(
     mut response: Response,
     cap: usize,
 ) -> std::result::Result<Vec<u8>, ReadError> {
-    if response
-        .headers()
-        .get(reqwest::header::CONTENT_ENCODING)
-        .is_some_and(|value| value != "identity")
-    {
+    if is_encoded(&response) {
         return Err(ReadError::Encoded);
     }
     if response
@@ -199,6 +250,66 @@ async fn read_capped(
     Ok(out)
 }
 
+/// Response headers the webview may see.
+fn visible_headers(response: &Response) -> Vec<(String, String)> {
+    response
+        .headers()
+        .iter()
+        .filter(|(name, _)| !is_blocked_response_header(name.as_str()))
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|value| (name.as_str().to_owned(), value.to_owned()))
+        })
+        .collect()
+}
+
+fn has_no_body(is_head: bool, status: StatusCode) -> bool {
+    is_head
+        || matches!(
+            status,
+            StatusCode::NO_CONTENT | StatusCode::RESET_CONTENT | StatusCode::NOT_MODIFIED
+        )
+}
+
+fn is_encoded(response: &Response) -> bool {
+    response
+        .headers()
+        .get(reqwest::header::CONTENT_ENCODING)
+        .is_some_and(|value| value != "identity")
+}
+
+/// Forwards a streamed body until it ends, fails, idles for longer than
+/// `idle`, or the sink stops listening.
+async fn pump(mut response: Response, sink: &StreamSink, idle: Duration) {
+    loop {
+        let event = match tokio::time::timeout(idle, response.chunk()).await {
+            Ok(Ok(Some(chunk))) => {
+                if sink(StreamEvent::Chunk(chunk.to_vec())) {
+                    continue;
+                }
+                return;
+            }
+            Ok(Ok(None)) => StreamEvent::End,
+            Ok(Err(error)) => stream_error(&network(error)),
+            Err(_) => stream_error(&Error::Network(format!(
+                "the server sent no data for {} seconds",
+                idle.as_secs()
+            ))),
+        };
+        sink(event);
+        return;
+    }
+}
+
+fn stream_error(error: &Error) -> StreamEvent {
+    StreamEvent::Error {
+        code: error.code().to_owned(),
+        message: error.to_string(),
+    }
+}
+
 fn read_error_response(error: ReadError) -> Result<BridgeResponse> {
     match error {
         ReadError::TooLarge => Ok(error_response(
@@ -219,7 +330,8 @@ fn read_error_response(error: ReadError) -> Result<BridgeResponse> {
 pub(crate) struct Bridge {
     controller: Arc<Controller>,
     app_header_names: Vec<String>,
-    inflight: std::sync::Mutex<HashMap<u32, tokio::task::AbortHandle>>,
+    inflight: std::sync::Mutex<HashMap<InflightKey, (u64, tokio::task::AbortHandle)>>,
+    next_token: AtomicU64,
 }
 
 impl Bridge {
@@ -234,37 +346,109 @@ impl Bridge {
             controller,
             app_header_names,
             inflight: std::sync::Mutex::new(HashMap::new()),
+            next_token: AtomicU64::new(0),
         })
     }
 
-    /// Runs a bridged request; cancellable with [`Bridge::cancel`].
-    pub async fn fetch(self: &Arc<Self>, request: BridgeRequest) -> Result<BridgeResponse> {
-        let id = request.id;
+    /// Runs a bridged request from window `scope`; cancellable with
+    /// [`Bridge::cancel`].
+    pub async fn fetch(
+        self: &Arc<Self>,
+        scope: &str,
+        request: BridgeRequest,
+    ) -> Result<BridgeResponse> {
         let bridge = self.clone();
-        let task = tokio::spawn(async move { bridge.execute(request).await });
-        if let Ok(mut inflight) = self.inflight.lock() {
-            inflight.insert(id, task.abort_handle());
-        }
-        let result = task.await;
-        if let Ok(mut inflight) = self.inflight.lock() {
-            inflight.remove(&id);
-        }
-        match result {
+        let task = self.spawn_tracked(
+            scope,
+            request.id,
+            async move { bridge.execute(request).await },
+        );
+        match task.await {
             Ok(result) => result,
             Err(error) if error.is_cancelled() => Err(Error::Aborted),
             Err(_) => Err(Error::InvalidRequest("the bridged request failed".into())),
         }
     }
 
-    /// Aborts an in-flight request.
-    pub fn cancel(&self, id: u32) {
-        if let Some(handle) = self
+    /// Like [`Bridge::fetch`], but an app API response returns once its
+    /// headers arrive (`streamed: true`) and its body goes to `sink`. The
+    /// request stays cancellable until the body ends.
+    pub async fn fetch_stream(
+        self: &Arc<Self>,
+        scope: &str,
+        request: BridgeRequest,
+        sink: StreamSink,
+    ) -> Result<BridgeResponse> {
+        let (head_tx, head_rx) = oneshot::channel();
+        let bridge = self.clone();
+        let idle = self.controller.config().stream_idle_timeout;
+        let _detached = self.spawn_tracked(scope, request.id, async move {
+            match bridge.open(request).await {
+                Ok(Outcome::Stream(head, response)) => {
+                    if head_tx.send(Ok(head)).is_ok() {
+                        pump(response, &sink, idle).await;
+                    }
+                }
+                Ok(Outcome::Done(head)) => {
+                    let _ = head_tx.send(Ok(head));
+                }
+                Err(error) => {
+                    let _ = head_tx.send(error_to_response(&error).ok_or(error));
+                }
+            }
+        });
+        // A cancelled task drops the sender before answering.
+        head_rx.await.unwrap_or(Err(Error::Aborted))
+    }
+
+    /// Aborts an in-flight request of window `scope`.
+    pub fn cancel(&self, scope: &str, id: u32) {
+        if let Some((_, handle)) = self
             .inflight
             .lock()
             .ok()
-            .and_then(|mut inflight| inflight.remove(&id))
+            .and_then(|mut inflight| inflight.remove(&(scope.to_owned(), id)))
         {
             handle.abort();
+        }
+    }
+
+    /// Spawns `future` as the in-flight request `id` of window `scope`.
+    fn spawn_tracked<F>(self: &Arc<Self>, scope: &str, id: u32, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let key = (scope.to_owned(), id);
+        let token = self.next_token.fetch_add(1, Ordering::Relaxed);
+        let guard = InflightGuard {
+            bridge: self.clone(),
+            key: key.clone(),
+            token,
+        };
+        let task = tokio::spawn(async move {
+            let _guard = guard;
+            future.await
+        });
+        let handle = task.abort_handle();
+        if let Ok(mut inflight) = self.inflight.lock() {
+            inflight.insert(key.clone(), (token, handle.clone()));
+        }
+        // It may have finished before it was registered.
+        if handle.is_finished() {
+            self.forget(&key, token);
+        }
+        task
+    }
+
+    fn forget(&self, key: &InflightKey, token: u64) {
+        if let Ok(mut inflight) = self.inflight.lock() {
+            if inflight
+                .get(key)
+                .is_some_and(|(current, _)| *current == token)
+            {
+                inflight.remove(key);
+            }
         }
     }
 
@@ -275,23 +459,22 @@ impl Bridge {
         }
     }
 
+    /// App API routes open a stream; everything else runs as in `fetch`.
+    async fn open(&self, request: BridgeRequest) -> Result<Outcome> {
+        let (method, url) = parse_target(&request)?;
+        if matches!(
+            classify(self.controller.config(), method.as_str(), &url)?,
+            Route::Api
+        ) {
+            return self
+                .api_stream(method, url, &request.headers, request.body)
+                .await;
+        }
+        self.route_and_run(request).await.map(Outcome::Done)
+    }
+
     async fn route_and_run(&self, request: BridgeRequest) -> Result<BridgeResponse> {
-        let url =
-            Url::parse(&request.url).map_err(|_| Error::InvalidRequest("invalid URL".into()))?;
-        let method = request.method.to_ascii_uppercase();
-        let method = match method.as_str() {
-            "GET" => Method::GET,
-            "POST" => Method::POST,
-            "PUT" => Method::PUT,
-            "PATCH" => Method::PATCH,
-            "DELETE" => Method::DELETE,
-            "HEAD" => Method::HEAD,
-            other => {
-                return Err(Error::InvalidRequest(format!(
-                    "method {other} is not allowed"
-                )))
-            }
-        };
+        let (method, url) = parse_target(&request)?;
         match classify(self.controller.config(), method.as_str(), &url)? {
             Route::Auth {
                 kind: RouteKind::GetSession,
@@ -332,6 +515,7 @@ impl Bridge {
 
     fn build(
         &self,
+        client: &reqwest::Client,
         method: Method,
         url: Url,
         headers: &[(String, String)],
@@ -365,12 +549,7 @@ impl Bridge {
                 "the request body is too large".into(),
             ));
         }
-        let builder = self
-            .controller
-            .http()
-            .client()
-            .request(method, url)
-            .headers(map);
+        let builder = client.request(method, url).headers(map);
         Ok(if bytes.is_empty() {
             builder
         } else {
@@ -434,7 +613,14 @@ impl Bridge {
     ) -> Result<BridgeResponse> {
         let token = self.controller.bearer_token().await;
         let response = self
-            .build(method, url, headers, body, token.as_deref())?
+            .build(
+                self.controller.http().client(),
+                method,
+                url,
+                headers,
+                body,
+                token.as_deref(),
+            )?
             .send()
             .await
             .map_err(network)?;
@@ -454,7 +640,14 @@ impl Bridge {
         let generation = self.controller.generation().await;
         // Sign-in requests never carry the current session.
         let response = self
-            .build(method, url, headers, body, None)?
+            .build(
+                self.controller.http().client(),
+                method,
+                url,
+                headers,
+                body,
+                None,
+            )?
             .send()
             .await
             .map_err(network)?;
@@ -491,22 +684,19 @@ impl Bridge {
         let token = self.controller.bearer_token().await;
         let is_head = method == Method::HEAD;
         let response = self
-            .build(method, url, headers, body, token.as_deref())?
+            .build(
+                self.controller.http().client(),
+                method,
+                url,
+                headers,
+                body,
+                token.as_deref(),
+            )?
             .send()
             .await
             .map_err(network)?;
         let status = response.status();
-        let response_headers: Vec<(String, String)> = response
-            .headers()
-            .iter()
-            .filter(|(name, _)| !is_blocked_response_header(name.as_str()))
-            .filter_map(|(name, value)| {
-                value
-                    .to_str()
-                    .ok()
-                    .map(|value| (name.as_str().to_owned(), value.to_owned()))
-            })
-            .collect();
+        let response_headers = visible_headers(&response);
         let content_type = response
             .headers()
             .get(CONTENT_TYPE)
@@ -516,12 +706,7 @@ impl Bridge {
             Ok(bytes) => bytes,
             Err(error) => return read_error_response(error),
         };
-        let no_body = is_head
-            || matches!(
-                status,
-                StatusCode::NO_CONTENT | StatusCode::RESET_CONTENT | StatusCode::NOT_MODIFIED
-            );
-        let body = if no_body {
+        let body = if has_no_body(is_head, status) {
             None
         } else if is_textual(content_type.as_deref()) {
             match String::from_utf8(bytes) {
@@ -536,8 +721,74 @@ impl Bridge {
             status_text: status.canonical_reason().unwrap_or_default().to_owned(),
             headers: response_headers,
             body,
+            streamed: false,
         })
     }
+
+    /// An app API request whose body is streamed: the headers are awaited for
+    /// `timeout`, the body has no total limit (see [`pump`]).
+    async fn api_stream(
+        &self,
+        method: Method,
+        url: Url,
+        headers: &[(String, String)],
+        body: Option<BridgeBody>,
+    ) -> Result<Outcome> {
+        let token = self.controller.bearer_token().await;
+        let is_head = method == Method::HEAD;
+        let request = self.build(
+            self.controller.http().stream_client(),
+            method,
+            url,
+            headers,
+            body,
+            token.as_deref(),
+        )?;
+        let response = tokio::time::timeout(self.controller.config().timeout, request.send())
+            .await
+            .map_err(|_| Error::Network("the server did not answer in time".into()))?
+            .map_err(network)?;
+        if is_encoded(&response) {
+            return read_error_response(ReadError::Encoded).map(Outcome::Done);
+        }
+        let status = response.status();
+        let head = BridgeResponse {
+            status: status.as_u16(),
+            status_text: status.canonical_reason().unwrap_or_default().to_owned(),
+            headers: visible_headers(&response),
+            body: None,
+            streamed: false,
+        };
+        if has_no_body(is_head, status) {
+            return Ok(Outcome::Done(head));
+        }
+        Ok(Outcome::Stream(
+            BridgeResponse {
+                streamed: true,
+                ..head
+            },
+            response,
+        ))
+    }
+}
+
+/// The method and URL of a bridged request.
+fn parse_target(request: &BridgeRequest) -> Result<(Method, Url)> {
+    let url = Url::parse(&request.url).map_err(|_| Error::InvalidRequest("invalid URL".into()))?;
+    let method = match request.method.to_ascii_uppercase().as_str() {
+        "GET" => Method::GET,
+        "POST" => Method::POST,
+        "PUT" => Method::PUT,
+        "PATCH" => Method::PATCH,
+        "DELETE" => Method::DELETE,
+        "HEAD" => Method::HEAD,
+        other => {
+            return Err(Error::InvalidRequest(format!(
+                "method {other} is not allowed"
+            )))
+        }
+    };
+    Ok((method, url))
 }
 
 #[cfg(test)]
