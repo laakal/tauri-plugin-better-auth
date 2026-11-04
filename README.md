@@ -95,7 +95,8 @@ on purpose.
 
 ## Requirements
 
-- **Better Auth** `>= 1.7.4`, with the `bearer()` plugin enabled on the server.
+- **Better Auth** `>= 1.7.4` (1.8 betas included), with the `bearer()` plugin
+  enabled on the server.
 - **Tauri** `3.0.0-alpha.5` or newer, with `tauri-plugin-deep-link` for deep
   links. On Windows and Linux you also need `tauri-plugin-single-instance` with
   its `deep-link` feature. For **Tauri 2**, use the `0.1.x` releases.

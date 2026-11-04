@@ -3,6 +3,21 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
+## 0.2.0-alpha.3 (unreleased, npm tag `next`)
+
+Brings the `0.1.3` changes to the Tauri 3 line. Protocol v1, unchanged.
+
+- Security: `/tauri/token` now refuses a code whose authorizing browser session
+  has ended (signed out, revoked or expired) since `/tauri/authorize`, with
+  `INVALID_OR_EXPIRED_CODE`. Better Auth 1.8 makes the same change for its
+  Electron sign-in. Codes issued before the upgrade are refused once; the user
+  signs in again.
+- The peer ranges admit the Better Auth 1.8 prereleases
+  (`>=1.7.4 <2 || >=1.8.0-0 <2`): npm refused to install the plugin next to
+  `better-auth@1.8.0-beta.x`. Tested with 1.7.4, 1.7.16 and 1.8.0-beta.5.
+- CI tests Better Auth's `beta` tag too, and checks that npm accepts the peer
+  ranges for each tested version.
+
 ## 0.2.0-alpha.2 (2026-10-28, npm tag `next`)
 
 **Streaming responses.** Protocol v1, unchanged.

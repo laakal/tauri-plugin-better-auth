@@ -81,6 +81,15 @@ describe('secondaryStorage', () => {
     const replay = await t.exchange(g);
     expect(await errorCode(replay)).toBe(ERR.INVALID_OR_EXPIRED_CODE.code);
   });
+
+  it('cancels the code when the authorizing session is revoked', async () => {
+    const t = await setup({ secondaryStorage: memoryStorage() });
+    const g = await t.grant();
+    await t.context.internalAdapter.deleteSession(t.signedIn.session.token);
+    const res = await t.exchange(g);
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe(ERR.INVALID_OR_EXPIRED_CODE.code);
+  });
 });
 
 describe('better-auth/minimal', () => {

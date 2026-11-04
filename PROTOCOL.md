@@ -61,7 +61,8 @@ bypassing the cookie cache, and is JSON only.
 
 **What it stores:** under `tauri:<code>` in the verification store, with a
 `codeExpiresIn` expiry (300 s by default):
-`{ userId, clientId, codeChallenge, state }`. `code` is 32 characters of
+`{ userId, sessionId, clientId, codeChallenge, state }`, where `sessionId` is the
+authorizing browser session. `code` is 32 characters of
 `[A-Za-z0-9]`.
 
 ```json
@@ -133,10 +134,13 @@ redirects.
    leaves the code burned.
 3. Compare `client_id` and `state` (constant-time).
 4. Check `BASE64URL(SHA256(code_verifier)) == codeChallenge`.
-5. Load the user.
-6. Create a session in this request's context. Host `databaseHooks.session.create.*`
+5. Check that the authorizing browser session (`sessionId`) still exists and has
+   not expired; otherwise `INVALID_OR_EXPIRED_CODE`. Signing out in the browser
+   before the app exchanges the code cancels the hand-off.
+6. Load the user.
+7. Create a session in this request's context. Host `databaseHooks.session.create.*`
    run here and may throw, which rejects the exchange, or return `false`.
-7. Set the session cookie, which the `bearer()` plugin mirrors into
+8. Set the session cookie, which the `bearer()` plugin mirrors into
    `set-auth-token`.
 
 ```json

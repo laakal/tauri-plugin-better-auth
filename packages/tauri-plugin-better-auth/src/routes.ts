@@ -53,6 +53,8 @@ const tokenBody = z.object({
 /** What `/tauri/authorize` stores under `tauri:<code>`. */
 const storedGrant = z.object({
   userId: z.string().min(1),
+  /** The browser session that authorized the code; it must outlive the exchange. */
+  sessionId: z.string().min(1),
   clientId: z.string().min(1),
   codeChallenge: z.string().regex(CODE_CHALLENGE_PATTERN),
   state: z.string().regex(STATE_PATTERN),
@@ -127,6 +129,7 @@ export const createAuthorizeEndpoint = (opts: ResolvedTauriOptions) =>
         identifier: `${CODE_IDENTIFIER_PREFIX}${code}`,
         value: JSON.stringify({
           userId: ctx.context.session.user.id,
+          sessionId: ctx.context.session.session.id,
           clientId: client_id,
           codeChallenge: code_challenge,
           state,
@@ -212,6 +215,21 @@ export const createTokenEndpoint = (opts: ResolvedTauriOptions) =>
       const challenge = await generateCodeChallenge(code_verifier);
       if (!constantTimeEqual(challenge, grant.data.codeChallenge)) {
         throw APIError.from('BAD_REQUEST', ERR.PKCE_VERIFICATION_FAILED);
+      }
+
+      // The browser session that authorized the code must still be live:
+      // signing out in the browser before the app exchanges the code cancels
+      // the hand-off. Expiry is checked here too, since older Better Auth
+      // releases list expired sessions.
+      const sessions = await ctx.context.internalAdapter.listSessions(
+        grant.data.userId,
+      );
+      const now = Date.now();
+      const issuing = sessions.find(
+        (session) => session.id === grant.data.sessionId,
+      );
+      if (!issuing || new Date(issuing.expiresAt).getTime() <= now) {
+        throw APIError.from('BAD_REQUEST', ERR.INVALID_OR_EXPIRED_CODE);
       }
 
       const user = await ctx.context.internalAdapter.findUserById(
