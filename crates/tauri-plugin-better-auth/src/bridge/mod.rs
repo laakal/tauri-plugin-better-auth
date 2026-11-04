@@ -91,7 +91,7 @@ pub struct BridgeResponse {
     pub headers: Vec<(String, String)>,
     /// Response body, if any.
     pub body: Option<BridgeBody>,
-    /// The body follows as [`StreamEvent`]s (only from [`Bridge::fetch_stream`]).
+    /// The body follows over the request's channel (only from `fetch_stream`).
     pub streamed: bool,
 }
 
