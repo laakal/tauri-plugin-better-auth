@@ -193,6 +193,32 @@ describe('POST /tauri/token', () => {
     expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
   });
 
+  it('cancels the code when the authorizing browser session signs out', async () => {
+    const t = await setup();
+    const g = await t.grant();
+    const signOut = await t.call('/sign-out', {
+      method: 'POST',
+      headers: { cookie: t.browserCookie, origin: 'http://localhost:3000' },
+    });
+    expect(signOut.status).toBe(200);
+
+    const res = await t.exchange(g);
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe(ERR.INVALID_OR_EXPIRED_CODE.code);
+    expect(res.headers.get('set-auth-token')).toBeNull();
+  });
+
+  it('cancels the code when the authorizing session has expired', async () => {
+    const t = await setup();
+    const g = await t.grant();
+    await t.context.internalAdapter.updateSession(t.signedIn.session.token, {
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    const res = await t.exchange(g);
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe(ERR.INVALID_OR_EXPIRED_CODE.code);
+  });
+
   it('rejects an expired code', async () => {
     const t = await setup({}, { codeExpiresIn: 30 });
     const g = await t.grant();

@@ -51,5 +51,5 @@ const authClient = asTauriClient(
 await requestAuth();
 ```
 
-Requires `better-auth` >= 1.7.4 and, for `/client`, `@tauri-apps/api` >= 2.11.
+Requires `better-auth` >= 1.7.4 (1.8 betas included) and, for `/client`, `@tauri-apps/api` >= 2.11.
 MIT licensed.

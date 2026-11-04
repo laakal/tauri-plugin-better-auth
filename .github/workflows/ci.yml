@@ -54,7 +54,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        better-auth: ['1.7.4', 'latest']
+        # The oldest supported release, the latest, and the current beta (its
+        # prerelease line must also be listed in the peer ranges).
+        better-auth: ['1.7.4', 'latest', 'beta']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -75,6 +77,16 @@ jobs:
       - run: bun run build
       - working-directory: packages/tauri-plugin-better-auth
         run: bun run typecheck && bun run test
+      # npm (unlike bun and pnpm) refuses peers outside the declared ranges:
+      # install the packed plugin next to this Better Auth like an app would.
+      - name: npm accepts the peer ranges
+        working-directory: packages/tauri-plugin-better-auth
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP" >/dev/null
+          cd "$RUNNER_TEMP"
+          echo '{ "name": "peer-check", "private": true }' > package.json
+          npm install --dry-run --no-audit --no-fund \
+            ./tauri-plugin-better-auth-*.tgz better-auth@${{ matrix.better-auth }}
 
   rust:
     name: Rust (${{ matrix.os }})
