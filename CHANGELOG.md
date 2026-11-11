@@ -15,6 +15,9 @@ Brings the `0.1.4` fix to the Tauri 3 line. Protocol v1, unchanged.
   could route them to Better Auth (e.g. `list-sessions`). Upgrade if your
   `api_routes` cover the auth path.
 - Tested with Better Auth 1.7.4, 1.7.20 and 1.8.0-beta.7.
+- Docs: a "Streaming responses" section with examples (AI SDK chat, Server-Sent
+  Events, cancelling, timeouts, buffered fetch), and streaming on the npm and
+  crates.io pages.
 
 ## 0.2.0-alpha.3 (2026-11-04, npm tag `next`)
 

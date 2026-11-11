@@ -15,7 +15,7 @@ plugin stores their session in the OS keychain and authenticates API requests.
 > | Your app        | npm                                         | crate           |
 > | --------------- | ------------------------------------------- | --------------- |
 > | Tauri 2         | `tauri-plugin-better-auth@latest` (`0.1.x`) | `0.1`           |
-> | Tauri 3 (alpha) | `tauri-plugin-better-auth@next` (`0.2.x`)   | `0.2.0-alpha.1` |
+> | Tauri 3 (alpha) | `tauri-plugin-better-auth@next` (`0.2.x`)   | `0.2.0-alpha.4` |
 
 [Get started](#setup) · [Run the example](examples/basic/README.md) ·
 [Configuration](#configuration-reference) · [Security](SECURITY.md)
@@ -84,14 +84,14 @@ Exact formats are in [PROTOCOL.md](PROTOCOL.md).
 Some of these are gaps ([Roadmap](#roadmap)); most are the security model,
 on purpose.
 
-| Area                  | Status                                                                                                                                                                                                                             |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platforms             | Desktop only: macOS, Windows, Linux. iOS and Android are not supported yet, on either line.                                                                                                                                        |
-| Streaming             | App API responses stream (SSE, AI SDK `streamText`); auth responses are read whole, since Rust scrubs them. Request bodies are buffered (4 MiB). There is no backpressure: chunks queue in the webview until your code reads them. |
-| Sign-in methods       | All of them in the browser (`requestAuth()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                                                                           |
-| Better Auth endpoints | The webview reaches [eight routes](#the-auth-bridge). Others (a plugin's endpoints, `/change-password`…) need `auth_route(...)`; `/tauri/*` never. By design.                                                                      |
-| API origins           | The bearer token goes only to the origins and path prefixes in `api_routes` (call it once per domain). Any other URL returns `403 FORBIDDEN_URL`. By design.                                                                       |
-| Redirects             | Never followed, so a `307` cannot carry the token elsewhere. Auth responses must be uncompressed JSON. By design.                                                                                                                  |
+| Area                  | Status                                                                                                                                                                                                                                                                              |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platforms             | Desktop only: macOS, Windows, Linux. iOS and Android are not supported yet, on either line.                                                                                                                                                                                         |
+| Streaming             | App API responses stream (SSE, AI SDK `streamText`); auth responses are read whole, since Rust scrubs them. Request bodies are buffered (4 MiB). There is no backpressure: chunks queue in the webview until your code reads them. See [Streaming responses](#streaming-responses). |
+| Sign-in methods       | All of them in the browser (`requestAuth()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                                                                                                                            |
+| Better Auth endpoints | The webview reaches [eight routes](#the-auth-bridge). Others (a plugin's endpoints, `/change-password`…) need `auth_route(...)`; `/tauri/*` never. By design.                                                                                                                       |
+| API origins           | The bearer token goes only to the origins and path prefixes in `api_routes` (call it once per domain). Any other URL returns `403 FORBIDDEN_URL`. By design.                                                                                                                        |
+| Redirects             | Never followed, so a `307` cannot carry the token elsewhere. Auth responses must be uncompressed JSON. By design.                                                                                                                                                                   |
 
 ## Requirements
 
@@ -269,7 +269,7 @@ if (cancelUrl) authClient.tauri.openApp(cancelUrl);
 
 ```toml
 [dependencies]
-tauri-plugin-better-auth = "0.2.0-alpha.1"
+tauri-plugin-better-auth = "0.2.0-alpha.4"
 tauri-plugin-deep-link = "3.0.0-alpha.3"
 tauri-runtime-wry = "3.0.0-alpha.5" # or tauri-runtime-cef, see "Tauri 3 and CEF"
 
@@ -400,38 +400,159 @@ const link = new OpenAPILink(contract, { url, fetch: tauriFetch }); // oRPC
 const api = ky.create({ fetch: tauriFetch });
 ```
 
-**Streaming.** App API responses stream: `tauriFetch` resolves once the
-headers arrive, and the body is read as Rust receives it, over a Tauri channel.
-SSE and AI SDK streams work as with a browser `fetch`:
+### Streaming responses
+
+`tauriFetch` streams app API responses. Token-by-token AI answers, Server-Sent
+Events and long downloads reach your UI as they arrive, exactly as with a
+browser `fetch`, and the bearer token still never enters the webview.
+
+**How it works.** Rust sends the request with the token, and `tauriFetch`
+resolves as soon as the response headers arrive. The body then follows chunk by
+chunk over a Tauri channel, as a standard `ReadableStream` on `res.body`. Code
+that reads the whole body (`res.json()`, `res.text()`) needs no change: it just
+waits for the last chunk.
+
+```mermaid
+sequenceDiagram
+    participant W as Webview (tauriFetch)
+    participant R as Rust bridge
+    participant A as Your API
+    W->>R: request, without a token
+    R->>A: request + Authorization: Bearer
+    A-->>R: status and headers
+    R-->>W: tauriFetch resolves, res.body is a stream
+    loop until the body ends
+        A-->>R: chunk
+        R-->>W: chunk, over a Tauri channel
+    end
+```
+
+| What                                      | Streams?                                    |
+| ----------------------------------------- | ------------------------------------------- |
+| App API responses (`api_routes`)          | Yes                                         |
+| Better Auth responses                     | No: read whole, so Rust can scrub the token |
+| Request bodies (uploads)                  | No: sent whole, up to 4 MiB                 |
+| Bodiless responses (`204`, `304`, `HEAD`) | Nothing to stream                           |
+
+**AI chat with the AI SDK.** On your API, return the stream as usual:
 
 ```ts
-// AI SDK UI: give the chat transport tauriFetch.
-const chat = useChat({
-  transport: new DefaultChatTransport({
-    api: 'https://api.example.com/api/chat',
-    fetch: tauriFetch,
-  }),
-});
+// Server: a route under one of your `api_routes` (Hono here)
+import { convertToModelMessages, streamText } from 'ai';
 
-// Or read the body yourself (SSE, NDJSON, …).
-const res = await tauriFetch('https://api.example.com/api/events');
-const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-for (let r = await reader.read(); !r.done; r = await reader.read()) {
-  render(r.value);
+app.post('/api/chat', async (c) => {
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session) return c.json({ error: 'Unauthorized' }, 401);
+
+  const { messages } = await c.req.json();
+  const result = streamText({
+    model,
+    messages: await convertToModelMessages(messages),
+  });
+  return result.toUIMessageStreamResponse();
+});
+```
+
+In the webview, hand `tauriFetch` to the chat transport:
+
+```tsx
+import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
+import { tauriFetch } from 'tauri-plugin-better-auth/client';
+
+export function Chat() {
+  const { messages, sendMessage, status, stop } = useChat({
+    transport: new DefaultChatTransport({
+      api: 'https://api.example.com/api/chat',
+      fetch: tauriFetch,
+    }),
+  });
+  // Messages render as tokens arrive. stop() ends the request in Rust.
 }
 ```
 
-- `timeout` covers the wait for the response headers. After that a stream runs
-  for as long as data keeps coming; it fails after `stream_idle_timeout` (60 s)
-  without a chunk. Send heartbeats on quiet SSE connections.
-- `abort()` and `res.body.cancel()` stop the request in Rust and close the
-  connection.
-- Auth responses are read whole and scrubbed first. Request bodies are
-  buffered.
-- For a client that should read every response whole, create a buffered
-  variant: `const bufferedFetch = createTauriFetch({ stream: false })`. Errors
-  then surface at the call rather than while reading the body, and API
-  responses are capped at 16 MiB.
+**Server-Sent Events.** `EventSource` cannot take a custom `fetch`, so read the
+event stream from `tauriFetch`:
+
+```ts
+import { tauriFetch } from 'tauri-plugin-better-auth/client';
+
+export async function subscribe(
+  url: string,
+  onMessage: (data: string) => void,
+  signal: AbortSignal,
+) {
+  const res = await tauriFetch(url, {
+    headers: { accept: 'text/event-stream' },
+    signal,
+  });
+  if (!res.ok) throw new Error(`Subscribe failed: ${res.status}`);
+
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += value;
+    const events = buffer.split(/\r?\n\r?\n/);
+    buffer = events.pop()!; // keep a partial event for the next chunk
+    for (const event of events) {
+      const data = event
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).replace(/^ /, ''))
+        .join('\n');
+      if (data) onMessage(data);
+    }
+  }
+}
+
+const controller = new AbortController();
+subscribe('https://api.example.com/api/events', console.log, controller.signal);
+// Later: controller.abort() closes the connection.
+```
+
+**Stopping a stream.** `abort()` on the request's signal, or `res.body.cancel()`,
+stops the request in Rust and closes the connection to your server:
+
+```ts
+const controller = new AbortController();
+const res = await tauriFetch(url, { signal: controller.signal });
+// …
+controller.abort(); // or: await res.body?.cancel()
+```
+
+**Timeouts.** A stream has no total size or time limit; two timeouts apply
+instead:
+
+- `timeout` (15 s) covers the wait for the response **headers**.
+- `stream_idle_timeout` (60 s) is the longest **silence between two chunks**.
+  A slow model or a quiet SSE channel needs a higher value, or a heartbeat
+  (an SSE comment such as `: ping`) more often than that:
+
+  ```rust
+  tauri_plugin_better_auth::Builder::new()
+      // …
+      .stream_idle_timeout(std::time::Duration::from_secs(300))
+  ```
+
+A stream that breaks off (network failure, idle timeout) errors `res.body`
+with a `TypeError`, as a browser `fetch` does.
+
+**When you want the whole response at once**, create a buffered variant. Errors
+then surface at the call rather than while reading the body, and API responses
+are capped at 16 MiB:
+
+```ts
+import { createTauriFetch } from 'tauri-plugin-better-auth/client';
+
+const bufferedFetch = createTauriFetch({ stream: false });
+const api = ky.create({ fetch: bufferedFetch });
+```
+
+**Permission.** `better-auth:default` includes streaming. If your capability
+lists permissions one by one, add `better-auth:allow-fetch-stream`; without it,
+`tauriFetch` falls back to buffered responses and nothing streams.
 
 ## The auth bridge
 

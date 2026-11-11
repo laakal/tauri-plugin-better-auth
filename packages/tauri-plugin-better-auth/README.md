@@ -51,6 +51,43 @@ const authClient = asTauriClient(
 await requestAuth();
 ```
 
+## Streaming
+
+`tauriFetch` streams app API responses: AI SDK chats, Server-Sent Events and
+long downloads arrive chunk by chunk, while the bearer token stays in Rust. It
+resolves when the headers arrive, and `res.body` is a standard `ReadableStream`.
+Better Auth responses are read whole, so Rust can scrub them.
+
+```tsx
+import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
+import { tauriFetch } from 'tauri-plugin-better-auth/client';
+
+const { messages, sendMessage, stop } = useChat({
+  transport: new DefaultChatTransport({
+    api: 'https://api.example.com/api/chat',
+    fetch: tauriFetch, // tokens render as they arrive; stop() ends it in Rust
+  }),
+});
+
+// Or read any stream yourself (a reader loop works in every Tauri webview):
+const res = await tauriFetch('https://api.example.com/api/events');
+const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+for (let r = await reader.read(); !r.done; r = await reader.read()) {
+  console.log(r.value);
+}
+```
+
+- `abort()` or `res.body.cancel()` closes the connection.
+- A stream may run as long as data keeps coming; it fails after 60 s of
+  silence (`stream_idle_timeout` in Rust).
+- For buffered responses, use `createTauriFetch({ stream: false })`.
+- Capabilities that list permissions one by one need
+  `better-auth:allow-fetch-stream`.
+
+More, including SSE parsing and timeouts:
+[Streaming responses](https://github.com/laakal/tauri-plugin-better-auth#streaming-responses).
+
 Requires `better-auth` >= 1.7.4 (1.8 betas included) and, for `/client`, `@tauri-apps/api` 3 (alpha). For Tauri 2,
 use `0.1.x`.
 MIT licensed.
