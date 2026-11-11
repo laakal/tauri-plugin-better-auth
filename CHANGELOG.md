@@ -3,6 +3,19 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
+## 0.1.4 (unreleased)
+
+Protocol v1, unchanged.
+
+- Security: the bridge refuses other spellings of the auth base path on the
+  auth origin (`/api/%61uth/…`, `/api//auth/…`, `/API/AUTH/…`, `..%2f`,
+  `;parameters`) with `403 FORBIDDEN_URL`. Before, an `api_routes` prefix such
+  as `/api/` let them through as app API requests, with the bearer token added
+  and the response unscrubbed, and a proxy or framework that normalizes paths
+  could route them to Better Auth (e.g. `list-sessions`). Upgrade if your
+  `api_routes` cover the auth path.
+- Tested with Better Auth 1.7.4, 1.7.20 and 1.8.0-beta.7.
+
 ## 0.1.3 (2026-11-04)
 
 Protocol v1, unchanged.
