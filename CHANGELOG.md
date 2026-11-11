@@ -3,6 +3,21 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
+## 0.1.5 (unreleased)
+
+Protocol v1, unchanged. No API changes.
+
+- Dependencies: the crate moves to `base64` 0.23 and `getrandom` 0.4. Rust 1.88
+  and Tauri 2.11 stay supported.
+- Docs: a "Streaming responses" section with examples (AI SDK chat, Server-Sent
+  Events, cancelling, timeouts, buffered fetch), and streaming on the npm and
+  crates.io pages.
+  These README changes landed after the 0.1.4 tag, so the npm and crates.io
+  pages show them from this release.
+- Development: tested against Better Auth 1.7.20 (`better-call` 1.4.5), with
+  tsdown 0.23.7, Vitest 5.1, oxlint 1.93 and oxfmt 0.78. Working on the repo
+  now needs Node 26; the published package still supports Node 22.
+
 ## 0.1.4 (2026-11-11)
 
 Protocol v1, unchanged.
@@ -15,9 +30,6 @@ Protocol v1, unchanged.
   could route them to Better Auth (e.g. `list-sessions`). Upgrade if your
   `api_routes` cover the auth path.
 - Tested with Better Auth 1.7.4, 1.7.20 and 1.8.0-beta.7.
-- Docs: a "Streaming responses" section with examples (AI SDK chat, Server-Sent
-  Events, cancelling, timeouts, buffered fetch), and streaming on the npm and
-  crates.io pages.
 
 ## 0.1.3 (2026-11-04)
 
