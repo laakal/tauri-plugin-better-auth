@@ -1,5 +1,6 @@
 //! Which bridged requests are allowed, and as what.
 
+use percent_encoding::percent_decode_str;
 use url::Url;
 
 use crate::{
@@ -53,6 +54,20 @@ pub(crate) fn classify(config: &Config, method: &str, url: &Url) -> Result<Route
             .ok_or_else(|| Error::UnsupportedAuthOperation(format!("{method} {relative}")));
     }
 
+    // Another spelling of an auth path (`/api/%61uth/…`, `/api//auth/…`,
+    // `/API/AUTH/…`) is not an API route: a proxy or framework in front of
+    // Better Auth may normalize it back, and the response would then reach the
+    // webview with the bearer token attached and nothing scrubbed.
+    if url.origin() == auth_origin {
+        let canonical_base = canonical_path(auth_base);
+        if canonical_base != "/" {
+            let canonical = canonical_path(path);
+            if canonical == canonical_base || canonical.starts_with(&format!("{canonical_base}/")) {
+                return Err(Error::ForbiddenUrl(path.to_owned()));
+            }
+        }
+    }
+
     let allowed = config.api_routes.iter().any(|route| {
         url.origin() == route.origin
             && route
@@ -69,6 +84,35 @@ pub(crate) fn classify(config: &Config, method: &str, url: &Url) -> Result<Route
             path
         )))
     }
+}
+
+/// The path as the most lenient server in front of Better Auth could read it:
+/// percent-decoded until stable, `\` as `/`, empty and dot segments resolved,
+/// `;parameters` dropped, lowercased. Only used to compare against the auth
+/// base path, never to build a request.
+fn canonical_path(path: &str) -> String {
+    let mut decoded = path.to_owned();
+    loop {
+        let next = percent_decode_str(&decoded)
+            .decode_utf8_lossy()
+            .into_owned();
+        if next == decoded {
+            break;
+        }
+        decoded = next;
+    }
+    let mut segments: Vec<String> = Vec::new();
+    for segment in decoded.split(['/', '\\']) {
+        let segment = segment.split(';').next().unwrap_or_default();
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            other => segments.push(other.to_lowercase()),
+        }
+    }
+    format!("/{}", segments.join("/"))
 }
 
 #[cfg(test)]
@@ -161,6 +205,41 @@ mod tests {
             "file:///etc/passwd",
         ] {
             assert!(classify_str("GET", url).is_err(), "{url}");
+        }
+    }
+
+    #[test]
+    fn other_spellings_of_an_auth_path_are_not_api_routes() {
+        for path in [
+            "/api/%61uth/get-session",
+            "/api/%2561uth/get-session",
+            "/api//auth/get-session",
+            "//api/auth/get-session",
+            "/api/x/..%2fauth/get-session",
+            "/api/x/..%5cauth/get-session",
+            "/api/x/%2e%2e%2fauth/list-sessions",
+            "/api%2fauth%2flist-sessions",
+            "/API/AUTH/list-sessions",
+            "/api/Auth/one-time-token/generate",
+            "/api/auth;v=1/list-sessions",
+            "/api/x/..;/auth/list-sessions",
+            "/api/%61uth",
+        ] {
+            let url = format!("https://api.example.com{path}");
+            assert!(
+                matches!(classify_str("GET", &url), Err(Error::ForbiddenUrl(_))),
+                "{path}"
+            );
+        }
+        // Paths that only resemble the auth base stay reachable.
+        for path in [
+            "/api/authors",
+            "/api/auth-status",
+            "/api/x/auth/get-session",
+            "/api/files/a%2Fb",
+        ] {
+            let url = format!("https://api.example.com{path}");
+            assert_eq!(classify_str("GET", &url).unwrap(), Route::Api, "{path}");
         }
     }
 
