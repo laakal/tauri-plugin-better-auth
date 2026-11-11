@@ -4181,6 +4181,7 @@ dependencies = [
  "keyring",
  "log",
  "open",
+ "percent-encoding",
  "reqwest",
  "rustls",
  "rustls-platform-verifier",
