@@ -3,7 +3,7 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
-## 0.2.0-alpha.4 (unreleased, npm tag `next`)
+## 0.2.0-alpha.4 (2026-11-11, npm tag `next`)
 
 Brings the `0.1.4` fix to the Tauri 3 line. Protocol v1, unchanged.
 
