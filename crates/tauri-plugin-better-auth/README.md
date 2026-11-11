@@ -5,7 +5,7 @@ apps. Users sign in through the system browser with PKCE. The session lives in
 Rust (in the OS keychain), and the webview never sees a token.
 
 > **Tauri 2 line (`0.1.x`).** For Tauri 3 (alpha), install
-> `tauri-plugin-better-auth@next` and use crate version `0.2.0-alpha.1`
+> `tauri-plugin-better-auth@next` and use crate version `0.2.0-alpha.4`
 > ([`v3` branch](https://github.com/laakal/tauri-plugin-better-auth/tree/v3)).
 > Keep the npm package and the crate on the same line.
 
@@ -41,6 +41,17 @@ tauri::Builder::default()
 - **Request bridge** (`tauriFetch` in JS): adds `Authorization: Bearer` in Rust,
   never follows redirects, and only reaches allowlisted auth operations and your
   API routes.
+- **Streaming:** API responses reach the webview chunk by chunk over a Tauri
+  channel, so AI SDK chats and Server-Sent Events work. `timeout` covers the
+  wait for headers, `stream_idle_timeout` (60 s by default) the silence between
+  chunks:
+
+  ```rust
+  tauri_plugin_better_auth::Builder::new()
+      // …
+      .stream_idle_timeout(std::time::Duration::from_secs(300))
+  ```
+
 - **Rust API:** `app.better_auth()` gives `request_auth`, `authenticate`,
   `session`, `sign_out` and `bearer_token`.
 
