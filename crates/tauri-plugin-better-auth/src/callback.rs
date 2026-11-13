@@ -70,6 +70,19 @@ pub(crate) fn parse_query<'a>(
     Some(Callback { state, outcome })
 }
 
+/// The `state` of a sign-in URL built by the controller (empty if absent).
+#[cfg(mobile)]
+pub(crate) fn state_of_sign_in_url(url: &str) -> String {
+    Url::parse(url)
+        .ok()
+        .and_then(|url| {
+            url.query_pairs()
+                .find(|(key, _)| key == "state")
+                .map(|(_, value)| value.into_owned())
+        })
+        .unwrap_or_default()
+}
+
 /// Parses `<scheme>://auth/callback?…`. Also accepts `<scheme>:/auth/callback`
 /// and `<scheme>:///auth/callback`, which some platforms produce.
 pub(crate) fn parse_deep_link(url: &Url, scheme: &str, callback_path: &str) -> Option<Callback> {

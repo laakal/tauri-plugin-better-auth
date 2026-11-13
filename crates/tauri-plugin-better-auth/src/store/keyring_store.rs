@@ -1,7 +1,13 @@
+#[cfg(desktop)]
+use keyring::{Entry, Error as KeyringError};
+#[cfg(mobile)]
+use keyring_core::{Entry, Error as KeyringError, api::CredentialStoreApi};
+
 use super::{SessionStore, StoreError, StoredSecret};
 
-/// Stores the secret in the OS credential store: macOS Keychain, Windows
-/// Credential Manager, or the Secret Service (GNOME Keyring, KWallet) on Linux.
+/// Stores the secret in the OS credential store: macOS Keychain, iOS Keychain,
+/// Android Keystore, Windows Credential Manager, or the Secret Service (GNOME
+/// Keyring, KWallet) on Linux.
 ///
 /// The plugin creates one by default with the app identifier as `service` and
 /// `better-auth:{client_id}@{origin}` as `account`, so a development backend
@@ -24,23 +30,42 @@ impl KeyringStore {
         }
     }
 
-    fn entry(&self) -> Result<keyring::Entry, StoreError> {
-        keyring::Entry::new(&self.service, &self.account).map_err(map_error)
+    #[cfg(desktop)]
+    fn entry(&self) -> Result<Entry, StoreError> {
+        Entry::new(&self.service, &self.account).map_err(map_error)
+    }
+
+    /// The app's own Keychain items: this device only, readable while it is
+    /// unlocked.
+    #[cfg(target_os = "ios")]
+    fn entry(&self) -> Result<Entry, StoreError> {
+        apple_native_keyring_store::protected::Store::new()
+            .and_then(|store| store.build(&self.service, &self.account, None))
+            .map_err(map_error)
+    }
+
+    /// App-private preferences, encrypted with a key held in the Android
+    /// Keystore.
+    #[cfg(target_os = "android")]
+    fn entry(&self) -> Result<Entry, StoreError> {
+        android_native_keyring_store::Store::new()
+            .and_then(|store| store.build(&self.service, &self.account, None))
+            .map_err(map_error)
     }
 }
 
-fn map_error(error: keyring::Error) -> StoreError {
+fn map_error(error: KeyringError) -> StoreError {
     match error {
-        keyring::Error::NoStorageAccess(inner) => {
+        KeyringError::NoStorageAccess(inner) => {
             StoreError::Unavailable(format!("no access to the credential store: {inner}"))
         }
-        keyring::Error::NoDefaultStore => {
+        KeyringError::NoDefaultStore => {
             StoreError::Unavailable("no credential store is available on this system".into())
         }
-        keyring::Error::PlatformFailure(inner) => {
+        KeyringError::PlatformFailure(inner) => {
             StoreError::Unavailable(format!("the credential store failed: {inner}"))
         }
-        keyring::Error::TooLong(field, limit) => StoreError::Failed(format!(
+        KeyringError::TooLong(field, limit) => StoreError::Failed(format!(
             "{field} exceeds the credential store limit of {limit}"
         )),
         other => StoreError::Failed(other.to_string()),
@@ -53,7 +78,7 @@ impl SessionStore for KeyringStore {
             Ok(json) => serde_json::from_str(&json)
                 .map(Some)
                 .map_err(|_| StoreError::Failed("the stored session is unreadable".into())),
-            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(KeyringError::NoEntry) => Ok(None),
             Err(error) => Err(map_error(error)),
         }
     }
@@ -66,7 +91,7 @@ impl SessionStore for KeyringStore {
 
     fn clear(&self) -> Result<(), StoreError> {
         match self.entry()?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
             Err(error) => Err(map_error(error)),
         }
     }

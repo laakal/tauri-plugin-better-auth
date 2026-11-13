@@ -3,6 +3,29 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
+## 0.2.0-alpha.6 (unreleased, npm tag `next`)
+
+Protocol v1, unchanged.
+
+- iOS (experimental): the sign-in page opens in an
+  `ASWebAuthenticationSession`, which returns the callback to the plugin
+  without `tauri-plugin-deep-link` or an `Info.plist` URL scheme. Closing the
+  sheet ends the sign-in with `ACCESS_DENIED`; `cancelAuth()` closes the sheet.
+  The session is stored in the iOS Keychain. The loopback transport is refused
+  on iOS. See "Platform notes" in the README.
+- Android (experimental): the sign-in page opens in a Custom Tab and returns
+  through `tauri-plugin-deep-link` (list the scheme under
+  `plugins.deep-link.mobile`). Closing the tab keeps the sign-in open for a
+  pasted code; `cancelAuth()` closes the tab. The session is stored encrypted
+  with an Android Keystore key. HTTPS uses the bundled Mozilla roots there.
+  The loopback transport is refused.
+- Mobile: the plugin installs `ring` as the default rustls provider when the
+  app has not chosen one. Without it, Tauri's own dev-server client panicked
+  at startup under `tauri ios dev` and `tauri android dev`.
+- The crate no longer depends on `open` on mobile. For the `keyring` feature it
+  uses `apple-native-keyring-store` on iOS and `android-native-keyring-store`
+  on Android.
+
 ## 0.2.0-alpha.5 (2026-11-11, npm tag `next`)
 
 Protocol v1, unchanged. No API changes.

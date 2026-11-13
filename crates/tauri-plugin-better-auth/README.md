@@ -57,5 +57,6 @@ tauri::Builder::default()
 - **Rust API:** `app.better_auth()` gives `request_auth`, `authenticate`,
   `session`, `sign_out` and `bearer_token`.
 
-**Requirements:** Tauri 3 (alpha.5+), wry or CEF runtime, Rust 1.95+. Desktop:
-macOS, Windows, Linux. For Tauri 2, use `0.1.x`. MIT licensed.
+**Requirements:** Tauri 3 (alpha.5+), wry or CEF runtime, Rust 1.95+. macOS,
+Windows, Linux; iOS and Android are experimental. For Tauri 2, use `0.1.x`. MIT
+licensed.

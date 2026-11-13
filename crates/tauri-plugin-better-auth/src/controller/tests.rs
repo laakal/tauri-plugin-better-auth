@@ -63,6 +63,7 @@ impl EventSink for Events {
 struct Opener {
     opened: StdMutex<Vec<String>>,
     fail: AtomicBool,
+    closed: AtomicUsize,
 }
 
 impl BrowserOpener for Opener {
@@ -72,6 +73,9 @@ impl BrowserOpener for Opener {
         }
         self.opened.lock().unwrap().push(url.to_owned());
         Ok(())
+    }
+    fn close(&self) {
+        self.closed.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -527,6 +531,62 @@ async fn a_cancel_without_the_right_state_is_ignored() {
         )
         .await;
     assert!(h.events.all().is_empty());
+}
+
+#[tokio::test]
+async fn a_dismissed_sign_in_page_ends_the_flow_as_access_denied() {
+    let h = Harness::new().await;
+    let state = h.start().await;
+    h.controller.browser_closed(&state, None).await;
+    assert_eq!(h.events.all(), vec![Ev::Error("ACCESS_DENIED".into())]);
+
+    // The flow is over: its callback no longer signs in.
+    h.controller.handle_deep_link(&Harness::link(&state)).await;
+    assert_eq!(h.events.all().len(), 1);
+    assert!(h.store.secret().is_none());
+}
+
+#[tokio::test]
+async fn a_sign_in_page_that_could_not_be_shown_reports_open_browser_failed() {
+    let h = Harness::new().await;
+    let state = h.start().await;
+    h.controller
+        .browser_closed(&state, Some("no window".into()))
+        .await;
+    assert_eq!(
+        h.events.all(),
+        vec![Ev::Error("OPEN_BROWSER_FAILED".into())]
+    );
+}
+
+#[tokio::test]
+async fn a_closed_page_of_a_replaced_or_cancelled_flow_is_ignored() {
+    let h = Harness::new().await;
+    let old = h.start().await;
+    let current = h.start().await;
+    h.controller.browser_closed(&old, None).await;
+    assert!(h.events.all().is_empty());
+
+    // The current flow is untouched.
+    h.mock_token("tok-1", 1).await;
+    h.mock_session("tok-1", "s1", "u1").await;
+    h.controller
+        .handle_deep_link(&Harness::link(&current))
+        .await;
+    assert!(h.events.all().contains(&Ev::Authenticated("u1".into())));
+
+    let cancelled = h.start().await;
+    h.controller.cancel_auth().await;
+    h.controller.browser_closed(&cancelled, None).await;
+    assert!(!h.events.all().iter().any(|e| matches!(e, Ev::Error(_))));
+}
+
+#[tokio::test]
+async fn cancelling_closes_the_sign_in_page() {
+    let h = Harness::new().await;
+    h.start().await;
+    h.controller.cancel_auth().await;
+    assert_eq!(h.opener.closed.load(Ordering::SeqCst), 1);
 }
 
 // ------------------------------------------------------------- races

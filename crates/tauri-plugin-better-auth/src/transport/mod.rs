@@ -19,10 +19,14 @@ pub(crate) fn auto_transport(deep_links_deliverable: bool) -> Transport {
 /// - macOS: only an installed `.app` bundle receives deep links, so `tauri dev`
 ///   cannot: wry runs a bare binary under `target/`, and the CEF runtime runs a
 ///   dev `.app` bundle that is also under `target/` and never registered.
+/// - iOS: always; the authentication session receives the callback itself.
+/// - Android: always; the scheme's intent filter is part of the app.
 /// - Windows and Linux: release builds are installed with their scheme
 ///   registered; debug builds usually are not.
 pub(crate) fn deep_links_deliverable() -> bool {
-    if cfg!(target_os = "macos") {
+    if cfg!(mobile) {
+        true
+    } else if cfg!(target_os = "macos") {
         std::env::current_exe()
             .map(|path| is_installed_app_bundle(&path.to_string_lossy()))
             .unwrap_or(false)
