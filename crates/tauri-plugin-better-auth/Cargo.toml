@@ -12,22 +12,22 @@ readme = "README.md"
 keywords = ["tauri", "tauri-plugin", "better-auth", "authentication", "pkce"]
 categories = ["authentication", "gui"]
 links = "tauri-plugin-better-auth"
-exclude = ["/tests/fixtures"]
+exclude = ["/tests/fixtures", "/.tauri", "/ios/.build"]
 
 [package.metadata.platforms.support]
 windows = { level = "full", notes = "Register tauri-plugin-single-instance with the `deep-link` feature, or deep links start a second instance." }
 linux = { level = "full", notes = "Same single-instance requirement as Windows. The keychain store needs a running Secret Service (GNOME Keyring, KWallet)." }
 macos = { level = "full", notes = "Deep links only reach an installed `.app` bundle; `tauri dev` falls back to loopback." }
-android = { level = "none", notes = "Planned for 0.2 (Custom Tabs)." }
-ios = { level = "none", notes = "Planned for 0.2 (ASWebAuthenticationSession)." }
+android = { level = "none", notes = "Not supported yet." }
+ios = { level = "partial", notes = "Sign-in runs in an ASWebAuthenticationSession; no deep-link plugin needed. The loopback transport is not available." }
 
 [package.metadata.docs.rs]
 all-features = true
 
 [features]
 default = ["keyring"]
-## OS keychain session storage (macOS Keychain, Windows Credential Manager, Linux Secret Service).
-keyring = ["dep:keyring"]
+## OS keychain session storage (macOS and iOS Keychain, Windows Credential Manager, Linux Secret Service).
+keyring = ["dep:keyring", "dep:keyring-core", "dep:apple-native-keyring-store"]
 
 [dependencies]
 tauri = { version = "2.11", default-features = false }
@@ -60,12 +60,24 @@ sha2 = "0.11"
 base64 = "0.23"
 getrandom = "0.4"
 subtle = "2.6"
-open = { version = "5", features = ["shellexecute-on-windows"] }
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
+
+# iOS opens the sign-in page in an ASWebAuthenticationSession instead.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+open = { version = "5", features = ["shellexecute-on-windows"] }
 keyring = { version = "4.2", default-features = false, features = [
   "v1",
+], optional = true }
+
+# `register_ios_plugin` only exists with the `wry` runtime, the only one on iOS.
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri = { version = "2.11", default-features = false, features = ["wry"] }
+# `keyring`'s `v1` API has no iOS store, so the Keychain store is used directly.
+keyring-core = { version = "1", optional = true }
+apple-native-keyring-store = { version = "1", features = [
+  "protected",
 ], optional = true }
 
 [build-dependencies]

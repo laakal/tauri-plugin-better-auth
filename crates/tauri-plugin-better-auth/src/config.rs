@@ -17,12 +17,13 @@ use crate::{Error, Result};
 pub enum Transport {
     /// Deep link when the OS can deliver it to this process, otherwise
     /// loopback: deep link for an installed macOS bundle and for release
-    /// builds on Windows and Linux; loopback for `tauri dev`.
+    /// builds on Windows and Linux; loopback for `tauri dev`. Always deep link
+    /// on iOS.
     #[default]
     Auto,
     /// The custom URI scheme (`<scheme>://auth/callback`).
     DeepLink,
-    /// A one-shot HTTP listener on `127.0.0.1` (RFC 8252 §7.3).
+    /// A one-shot HTTP listener on `127.0.0.1` (RFC 8252 §7.3). Desktop only.
     Loopback,
 }
 
@@ -178,6 +179,12 @@ impl RawConfig {
 
         let api_routes = validate_api_routes(self.api_routes)?;
         let auth_routes = validate_auth_routes(self.auth_routes)?;
+
+        if cfg!(mobile) && self.transport == Transport::Loopback {
+            return Err(Error::Config(
+                "the loopback transport is not available on mobile; use Transport::Auto".into(),
+            ));
+        }
 
         let pending_ttl = self.pending_ttl.unwrap_or(Duration::from_secs(600));
         if pending_ttl < Duration::from_secs(60) || pending_ttl > Duration::from_secs(3600) {

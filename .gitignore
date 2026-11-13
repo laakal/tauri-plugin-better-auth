@@ -21,3 +21,8 @@ examples/basic/tauri-app/src-tauri/gen/schemas/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# iOS plugin build output (the Tauri Swift API is copied in by build.rs)
+crates/tauri-plugin-better-auth/.tauri/
+crates/tauri-plugin-better-auth/ios/.build/
+crates/tauri-plugin-better-auth/ios/Package.resolved

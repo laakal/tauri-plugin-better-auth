@@ -1,10 +1,12 @@
 //! # tauri-plugin-better-auth
 //!
-//! [Better Auth](https://better-auth.com) for Tauri 2 desktop apps: browser
+//! [Better Auth](https://better-auth.com) for Tauri 2 apps (desktop, and iOS
+//! experimentally): browser
 //! sign-in with PKCE, a session held in Rust, and a webview that never sees a
 //! token.
 //!
-//! - The app opens your sign-in page in the system browser.
+//! - The app opens your sign-in page in the system browser (on iOS, in the
+//!   system authentication sheet).
 //! - The page hands a single-use code back over a deep link or a loopback
 //!   redirect.
 //! - This plugin exchanges the code, verifies the session and stores it in
@@ -42,6 +44,8 @@ mod config;
 mod controller;
 mod error;
 mod http;
+#[cfg(target_os = "ios")]
+mod ios;
 mod models;
 mod pkce;
 mod store;
@@ -59,7 +63,7 @@ use tauri::{
 use crate::{
     bridge::Bridge,
     config::{ExtraAuthRoute, RawConfig},
-    controller::{BrowserOpener, Controller, ControllerParts, EventSink, SystemBrowser},
+    controller::{BrowserOpener, Controller, ControllerParts, EventSink},
     http::{AppHeaders, HttpApi},
     store::profile::FileProfileStore,
 };
@@ -156,8 +160,8 @@ impl<R: Runtime> Builder<R> {
     }
 
     /// Required. The custom URI scheme registered for deep links, e.g.
-    /// `com.example.app`. It must also be listed in
-    /// `plugins.deep-link.desktop.schemes`.
+    /// `com.example.app`. On desktop it must also be listed in
+    /// `plugins.deep-link.desktop.schemes`; on iOS no registration is needed.
     pub fn scheme(mut self, scheme: impl Into<String>) -> Self {
         self.raw.scheme = Some(scheme.into());
         self
@@ -267,7 +271,9 @@ impl<R: Runtime> Builder<R> {
     }
 
     /// Replaces how the sign-in page is opened (the OS default browser by
-    /// default), e.g. to pick a browser or to show the URL instead.
+    /// default, the system authentication sheet on iOS), e.g. to pick a
+    /// browser or to show the URL instead. On iOS the callback must then reach
+    /// the app as a deep link.
     pub fn opener<F>(mut self, open: F) -> Self
     where
         F: Fn(&str) -> std::io::Result<()> + Send + Sync + 'static,
@@ -305,8 +311,14 @@ impl<R: Runtime> Builder<R> {
                 commands::fetch_stream,
                 commands::fetch_cancel,
             ])
-            .setup(move |app, _api| {
+            .setup(move |app, api| {
+                // Only iOS has a native half to register.
+                let _ = &api;
+                // Before Tauri creates the first webview.
+                #[cfg(mobile)]
+                tls::install_default_provider();
                 let config = Arc::new(raw.validate()?);
+                #[cfg(desktop)]
                 warn_if_scheme_unregistered(app, &config.scheme, config.transport);
 
                 let store: Arc<dyn SessionStore> = match store {
@@ -344,9 +356,18 @@ impl<R: Runtime> Builder<R> {
                     main_window: config.main_window.clone(),
                     on_session,
                 });
+                #[cfg(target_os = "ios")]
+                let mut auth_session = None;
                 let opener: Arc<dyn BrowserOpener> = match opener {
                     Some(open) => Arc::new(CustomOpener(open)),
-                    None => Arc::new(SystemBrowser),
+                    #[cfg(target_os = "ios")]
+                    None => {
+                        let session = ios::AuthSession::register(&api, config.scheme.clone())?;
+                        auth_session = Some(session.clone());
+                        session
+                    }
+                    #[cfg(not(target_os = "ios"))]
+                    None => Arc::new(controller::SystemBrowser),
                 };
                 let controller = Controller::new(ControllerParts {
                     config: config.clone(),
@@ -358,6 +379,10 @@ impl<R: Runtime> Builder<R> {
                     deep_links_deliverable: transport::deep_links_deliverable(),
                     app_name: package.name.clone(),
                 });
+                #[cfg(target_os = "ios")]
+                if let Some(session) = auth_session {
+                    session.attach(&controller);
+                }
                 let bridge = Bridge::new(controller.clone());
                 app.manage(BetterAuth::<R> {
                     controller: controller.clone(),
@@ -399,6 +424,7 @@ fn default_store<R: Runtime>(app: &AppHandle<R>, config: &config::Config) -> Arc
 }
 
 /// Warns when the scheme is missing from `plugins.deep-link.desktop.schemes`.
+#[cfg(desktop)]
 fn warn_if_scheme_unregistered<R: Runtime>(app: &AppHandle<R>, scheme: &str, transport: Transport) {
     if transport == Transport::Loopback {
         return;
@@ -442,6 +468,7 @@ fn warn_if_scheme_unregistered<R: Runtime>(app: &AppHandle<R>, scheme: &str, tra
 
 struct TauriEvents<R: Runtime> {
     app: AppHandle<R>,
+    #[cfg_attr(mobile, allow(dead_code))]
     main_window: String,
     on_session: Option<SessionFn<R>>,
 }
@@ -474,7 +501,10 @@ impl<R: Runtime> EventSink for TauriEvents<R> {
         }
     }
 
+    /// Brings the main window forward. A mobile app is already in front: the
+    /// sign-in sheet closes onto it.
     fn focus(&self) {
+        #[cfg(desktop)]
         if let Some(window) = self.app.get_webview_window(&self.main_window) {
             let _ = window.unminimize();
             let _ = window.show();

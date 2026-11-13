@@ -19,6 +19,11 @@ impl Controller {
             Transport::Auto => auto_transport(self.deep_links_deliverable),
             other => other,
         };
+        if cfg!(mobile) && transport == Transport::Loopback {
+            return Err(Error::InvalidRequest(
+                "the loopback transport is not available on mobile".into(),
+            ));
+        }
         let pkce = generate_pkce()?;
         let state = generate_state()?;
 
@@ -96,6 +101,23 @@ impl Controller {
         let mut inner = self.inner.lock().await;
         inner.generation += 1;
         inner.pending = None;
+        drop(inner);
+        self.opener.close();
+    }
+
+    /// The sign-in page closed without a callback (the iOS authentication
+    /// sheet was dismissed, or could not be shown: `failure`). Ends that
+    /// sign-in and reports it; ignored when it already finished or was
+    /// replaced.
+    #[cfg_attr(not(any(target_os = "ios", test)), allow(dead_code))]
+    pub async fn browser_closed(&self, state: &str, failure: Option<String>) {
+        if self.claim(state, None).await.is_err() {
+            return;
+        }
+        self.events.error(&match failure {
+            Some(message) => Error::OpenBrowser(message),
+            None => Error::AccessDenied,
+        });
     }
 
     /// Takes the pending flow if `state` matches. A mismatch leaves it alone.

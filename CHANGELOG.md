@@ -3,6 +3,22 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
+## Unreleased
+
+Protocol v1, unchanged.
+
+- iOS (experimental): the sign-in page opens in an
+  `ASWebAuthenticationSession`, which returns the callback to the plugin
+  without `tauri-plugin-deep-link` or an `Info.plist` URL scheme. Closing the
+  sheet ends the sign-in with `ACCESS_DENIED`; `cancelAuth()` closes the sheet.
+  The session is stored in the iOS Keychain. The loopback transport is refused
+  on iOS. See "Platform notes" in the README.
+- iOS: the plugin installs `ring` as the default rustls provider when the app
+  has not chosen one. Without it, Tauri's own dev-server client panicked at
+  startup under `tauri ios dev`.
+- The crate no longer depends on `open` on iOS, and uses
+  `apple-native-keyring-store` there for the `keyring` feature.
+
 ## 0.1.5 (2026-11-11)
 
 Protocol v1, unchanged. No API changes.

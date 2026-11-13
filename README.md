@@ -26,7 +26,8 @@ plugin stores their session in the OS keychain and authenticates API requests.
 | A return to the app by deep link, local redirect or pasted code                    | A request bridge that adds the bearer token in Rust                           |
 | Support for macOS, Windows and Linux                                               | Separate website and API domains, such as `example.com` and `api.example.com` |
 
-> **Desktop support:** macOS, Windows and Linux. Mobile is not supported yet.
+> **Platforms:** macOS, Windows and Linux. iOS is experimental (see
+> [Platform notes](#platform-notes)); Android is not supported yet.
 > See [Limitations](#limitations).
 
 ## On this page
@@ -86,7 +87,7 @@ on purpose.
 
 | Area                  | Status                                                                                                                                                                                                                                                                              |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platforms             | Desktop only: macOS, Windows, Linux. iOS and Android are not supported yet, on either line.                                                                                                                                                                                         |
+| Platforms             | macOS, Windows, Linux. iOS is experimental on the Tauri 2 line. Android is not supported yet.                                                                                                                                                                                       |
 | Streaming             | App API responses stream (SSE, AI SDK `streamText`); auth responses are read whole, since Rust scrubs them. Request bodies are buffered (4 MiB). There is no backpressure: chunks queue in the webview until your code reads them. See [Streaming responses](#streaming-responses). |
 | Sign-in methods       | All of them in the browser (`requestAuth()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                                                                                                                            |
 | Better Auth endpoints | The webview reaches [eight routes](#the-auth-bridge). Others (a plugin's endpoints, `/change-password`…) need `auth_route(...)`; `/tauri/*` never. By design.                                                                                                                       |
@@ -674,7 +675,7 @@ the code, never on the message.
 | `NO_PENDING_FLOW`                                  | A callback or paste arrived with no sign-in in progress               |
 | `FLOW_EXPIRED`                                     | The sign-in waited longer than `pending_ttl`                          |
 | `INVALID_CODE` / `INVALID_CALLBACK`                | The pasted value or link is malformed or not for this app             |
-| `ACCESS_DENIED`                                    | The user cancelled in the browser                                     |
+| `ACCESS_DENIED`                                    | The user cancelled in the browser, or closed the iOS sign-in sheet    |
 | `SUPERSEDED`                                       | A newer sign-in, a cancel or a sign-out happened meanwhile            |
 | `OPEN_BROWSER_FAILED`                              | The browser could not be opened (`requestAuth` still returns the URL) |
 | `NETWORK`                                          | The server could not be reached                                       |
@@ -713,6 +714,22 @@ the code, never on the message.
 - The keychain ties access to the app's code signature. Unsigned development
   builds may ask for keychain access after each rebuild. Use
   `.store(MemoryStore::new())` while iterating if that gets in the way.
+
+**iOS** (experimental)
+
+- The sign-in page opens in the system authentication sheet
+  (`ASWebAuthenticationSession`), which hands the callback straight to the
+  plugin. `tauri-plugin-deep-link` and an `Info.plist` URL scheme are not
+  needed for sign-in; the `scheme` setting still names the callback.
+- iOS asks the user to confirm ("… wants to use example.com to sign in"), and
+  the sheet shares cookies with Safari.
+- Closing the sheet ends the sign-in with an `ACCESS_DENIED` error event.
+  `cancelAuth()` closes the sheet.
+- Only the deep-link transport exists: `loopback` is refused.
+- The session is stored in the app's Keychain items, on this device only and
+  readable while it is unlocked.
+- A custom `Builder::opener` replaces the sheet; the callback must then reach
+  the app as a deep link.
 
 **Windows**
 
@@ -801,10 +818,11 @@ something or to help.
   is stable.
 - The Tauri 2 line (`0.1.x`) keeps getting security and compatibility fixes.
 
-**Later: mobile** (iOS and Android)
+**Later: Android**
 
-- Wanted, not scheduled. It needs a mobile keychain store and the platform
-  hand-off (app links and custom tabs).
+- Wanted, not scheduled. It needs a Keystore session store and the platform
+  hand-off (custom tabs and app links). iOS support is experimental until it
+  has had real-device use.
 
 **Not planned** (by design, see [Security](#security)):
 
