@@ -3,7 +3,7 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
-## 0.1.6 (unreleased)
+## 0.1.6 (2026-11-13)
 
 Protocol v1, unchanged.
 
