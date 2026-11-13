@@ -20,6 +20,7 @@ pub(crate) fn auto_transport(deep_links_deliverable: bool) -> Transport {
 ///   cannot: it runs a bare binary under `target/`. A bundle run in place from
 ///   `target/` counts as dev too, since macOS may never have registered it.
 /// - iOS: always; the authentication session receives the callback itself.
+/// - Android: always; the scheme's intent filter is part of the app.
 /// - Windows and Linux: release builds are installed with their scheme
 ///   registered; debug builds usually are not.
 pub(crate) fn deep_links_deliverable() -> bool {

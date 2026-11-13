@@ -55,6 +55,6 @@ tauri::Builder::default()
 - **Rust API:** `app.better_auth()` gives `request_auth`, `authenticate`,
   `session`, `sign_out` and `bearer_token`.
 
-**Requirements:** Tauri 2.11+, Rust 1.88+. macOS, Windows, Linux; iOS is
-experimental. MIT
+**Requirements:** Tauri 2.11+, Rust 1.88+. macOS, Windows, Linux; iOS and
+Android are experimental. MIT
 licensed.

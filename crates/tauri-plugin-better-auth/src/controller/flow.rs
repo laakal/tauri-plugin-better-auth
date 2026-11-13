@@ -106,10 +106,10 @@ impl Controller {
     }
 
     /// The sign-in page closed without a callback (the iOS authentication
-    /// sheet was dismissed, or could not be shown: `failure`). Ends that
-    /// sign-in and reports it; ignored when it already finished or was
-    /// replaced.
-    #[cfg_attr(not(any(target_os = "ios", test)), allow(dead_code))]
+    /// sheet was dismissed), or could not be shown at all (`failure`, iOS and
+    /// Android). Ends that sign-in and reports it; ignored when it already
+    /// finished or was replaced.
+    #[cfg_attr(not(any(mobile, test)), allow(dead_code))]
     pub async fn browser_closed(&self, state: &str, failure: Option<String>) {
         if self.claim(state, None).await.is_err() {
             return;

@@ -7,14 +7,15 @@
 
 use std::sync::{Arc, OnceLock, Weak};
 
+use crate::{
+    callback::state_of_sign_in_url,
+    controller::{BrowserOpener, Controller},
+};
 use serde::{Deserialize, Serialize};
 use tauri::{
     plugin::{mobile::PluginInvokeError, PluginApi, PluginHandle},
     Runtime,
 };
-use url::Url;
-
-use crate::controller::{BrowserOpener, Controller};
 
 tauri::ios_plugin_binding!(init_plugin_better_auth);
 
@@ -65,14 +66,7 @@ impl<R: Runtime> BrowserOpener for AuthSession<R> {
             .get()
             .cloned()
             .ok_or_else(|| std::io::Error::other("the plugin is not ready"))?;
-        let state = Url::parse(url)
-            .ok()
-            .and_then(|url| {
-                url.query_pairs()
-                    .find(|(key, _)| key == "state")
-                    .map(|(_, value)| value.into_owned())
-            })
-            .unwrap_or_default();
+        let state = state_of_sign_in_url(url);
         let plugin = self.plugin.clone();
         let args = StartAuth {
             url: url.to_owned(),

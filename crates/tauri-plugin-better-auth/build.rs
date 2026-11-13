@@ -1,5 +1,6 @@
-//! Generates the ACL permission files for the plugin commands and, for iOS,
-//! builds and links the Swift package under `ios/`.
+//! Generates the ACL permission files for the plugin commands and wires the
+//! native halves: the Swift package under `ios/` and the Android library under
+//! `android/`.
 
 const COMMANDS: &[&str] = &[
     "request_auth",
@@ -13,5 +14,8 @@ const COMMANDS: &[&str] = &[
 ];
 
 fn main() {
-    tauri_plugin::Builder::new(COMMANDS).ios_path("ios").build();
+    tauri_plugin::Builder::new(COMMANDS)
+        .android_path("android")
+        .ios_path("ios")
+        .build();
 }

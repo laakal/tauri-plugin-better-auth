@@ -12,13 +12,19 @@ readme = "README.md"
 keywords = ["tauri", "tauri-plugin", "better-auth", "authentication", "pkce"]
 categories = ["authentication", "gui"]
 links = "tauri-plugin-better-auth"
-exclude = ["/tests/fixtures", "/.tauri", "/ios/.build"]
+exclude = [
+  "/tests/fixtures",
+  "/.tauri",
+  "/ios/.build",
+  "/android/.tauri",
+  "/android/build",
+]
 
 [package.metadata.platforms.support]
 windows = { level = "full", notes = "Register tauri-plugin-single-instance with the `deep-link` feature, or deep links start a second instance." }
 linux = { level = "full", notes = "Same single-instance requirement as Windows. The keychain store needs a running Secret Service (GNOME Keyring, KWallet)." }
 macos = { level = "full", notes = "Deep links only reach an installed `.app` bundle; `tauri dev` falls back to loopback." }
-android = { level = "none", notes = "Not supported yet." }
+android = { level = "partial", notes = "Sign-in runs in a Custom Tab and returns through tauri-plugin-deep-link (`plugins.deep-link.mobile`). The loopback transport is not available; HTTPS uses the bundled Mozilla roots." }
 ios = { level = "partial", notes = "Sign-in runs in an ASWebAuthenticationSession; no deep-link plugin needed. The loopback transport is not available." }
 
 [package.metadata.docs.rs]
@@ -26,8 +32,13 @@ all-features = true
 
 [features]
 default = ["keyring"]
-## OS keychain session storage (macOS and iOS Keychain, Windows Credential Manager, Linux Secret Service).
-keyring = ["dep:keyring", "dep:keyring-core", "dep:apple-native-keyring-store"]
+## OS keychain session storage (macOS and iOS Keychain, Android Keystore, Windows Credential Manager, Linux Secret Service).
+keyring = [
+  "dep:keyring",
+  "dep:keyring-core",
+  "dep:apple-native-keyring-store",
+  "dep:android-native-keyring-store",
+]
 
 [dependencies]
 tauri = { version = "2.11", default-features = false }
@@ -50,7 +61,6 @@ rustls = { version = "0.23.46", default-features = false, features = [
   "std",
   "tls12",
 ] }
-rustls-platform-verifier = "0.7"
 # Not used directly: raises the minimum version (RUSTSEC-2026-0382, certificate
 # verification accepting distrusted intermediates). `rustls` 0.23.46 above covers
 # RUSTSEC-2026-0285 and 0346-0349.
@@ -64,18 +74,29 @@ hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 
-# iOS opens the sign-in page in an ASWebAuthenticationSession instead.
-[target.'cfg(not(target_os = "ios"))'.dependencies]
+# The OS certificate verifier. On Android it needs a Kotlin component in the
+# app's Gradle build, so the bundled Mozilla roots are used there instead.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rustls-platform-verifier = "0.7"
+
+[target.'cfg(target_os = "android")'.dependencies]
+webpki-roots = "1"
+android-native-keyring-store = { version = "1", optional = true }
+
+# Mobile opens the sign-in page natively (ASWebAuthenticationSession, Custom
+# Tabs), and `keyring`'s `v1` API has no mobile store.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 open = { version = "5", features = ["shellexecute-on-windows"] }
 keyring = { version = "4.2", default-features = false, features = [
   "v1",
 ], optional = true }
 
+[target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
+keyring-core = { version = "1", optional = true }
+
 # `register_ios_plugin` only exists with the `wry` runtime, the only one on iOS.
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri = { version = "2.11", default-features = false, features = ["wry"] }
-# `keyring`'s `v1` API has no iOS store, so the Keychain store is used directly.
-keyring-core = { version = "1", optional = true }
 apple-native-keyring-store = { version = "1", features = [
   "protected",
 ], optional = true }

@@ -18,7 +18,7 @@ pub enum Transport {
     /// Deep link when the OS can deliver it to this process, otherwise
     /// loopback: deep link for an installed macOS bundle and for release
     /// builds on Windows and Linux; loopback for `tauri dev`. Always deep link
-    /// on iOS.
+    /// on iOS and Android.
     #[default]
     Auto,
     /// The custom URI scheme (`<scheme>://auth/callback`).

@@ -26,7 +26,8 @@
     "deep-link": {
       "desktop": {
         "schemes": ["com.example.betterauth"]
-      }
+      },
+      "mobile": [{ "scheme": ["com.example.betterauth"], "appLink": false }]
     }
   },
   "bundle": {

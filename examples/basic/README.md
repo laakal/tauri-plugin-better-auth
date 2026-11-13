@@ -38,6 +38,21 @@ bun --cwd examples/basic/tauri-app run tauri dev
    token, added in Rust.
 5. Restart the app: you are still signed in (OS keychain). Then **Sign out**.
 
+## iOS and Android
+
+The same app runs on a simulator or an emulator (both experimental):
+
+```sh
+bun --cwd examples/basic/tauri-app run tauri ios dev
+bun --cwd examples/basic/tauri-app run tauri android dev
+```
+
+- **iOS** opens the hand-off page in the system sign-in sheet, which returns
+  to the app by itself.
+- **Android** opens it in a Custom Tab and returns through the deep link. The
+  emulator reaches the server on your machine after
+  `adb reverse tcp:3000 tcp:3000`.
+
 ## Protocol end-to-end test
 
 The Rust crate has a test that drives the real plugin against this server:

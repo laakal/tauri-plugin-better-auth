@@ -57,15 +57,16 @@ pub(crate) trait BrowserOpener: Send + Sync + 'static {
     fn open(&self, url: &str) -> std::io::Result<()>;
 
     /// Dismisses the sign-in page, where the opener controls it (the iOS
-    /// authentication sheet). A browser window cannot be closed.
+    /// authentication sheet, an Android Custom Tab). A browser window cannot
+    /// be closed.
     fn close(&self) {}
 }
 
 /// The OS default browser.
-#[cfg(not(target_os = "ios"))]
+#[cfg(desktop)]
 pub(crate) struct SystemBrowser;
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(desktop)]
 impl BrowserOpener for SystemBrowser {
     fn open(&self, url: &str) -> std::io::Result<()> {
         open::that_detached(url)

@@ -26,8 +26,8 @@ plugin stores their session in the OS keychain and authenticates API requests.
 | A return to the app by deep link, local redirect or pasted code                    | A request bridge that adds the bearer token in Rust                           |
 | Support for macOS, Windows and Linux                                               | Separate website and API domains, such as `example.com` and `api.example.com` |
 
-> **Platforms:** macOS, Windows and Linux. iOS is experimental (see
-> [Platform notes](#platform-notes)); Android is not supported yet.
+> **Platforms:** macOS, Windows and Linux. iOS and Android are experimental
+> (see [Platform notes](#platform-notes)).
 > See [Limitations](#limitations).
 
 ## On this page
@@ -87,7 +87,7 @@ on purpose.
 
 | Area                  | Status                                                                                                                                                                                                                                                                              |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platforms             | macOS, Windows, Linux. iOS is experimental on the Tauri 2 line. Android is not supported yet.                                                                                                                                                                                       |
+| Platforms             | macOS, Windows, Linux. iOS and Android are experimental.                                                                                                                                                                                                                            |
 | Streaming             | App API responses stream (SSE, AI SDK `streamText`); auth responses are read whole, since Rust scrubs them. Request bodies are buffered (4 MiB). There is no backpressure: chunks queue in the webview until your code reads them. See [Streaming responses](#streaming-responses). |
 | Sign-in methods       | All of them in the browser (`requestAuth()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                                                                                                                            |
 | Better Auth endpoints | The webview reaches [eight routes](#the-auth-bridge). Others (a plugin's endpoints, `/change-password`…) need `auth_route(...)`; `/tauri/*` never. By design.                                                                                                                       |
@@ -286,6 +286,10 @@ pub fn run() {
   }
 }
 ```
+
+For Android, also add
+`"mobile": [{ "scheme": ["com.example.app"], "appLink": false }]` next to
+`desktop`. iOS needs no entry.
 
 **Capabilities:** grant the plugin to your window.
 
@@ -731,6 +735,21 @@ the code, never on the message.
 - A custom `Builder::opener` replaces the sheet; the callback must then reach
   the app as a deep link.
 
+**Android** (experimental)
+
+- The sign-in page opens in a Custom Tab (Chrome or the default browser). The
+  callback returns as a deep link, so `tauri-plugin-deep-link` must be
+  registered and the scheme listed under `plugins.deep-link.mobile`.
+- Closing the tab does not end the sign-in: the app can still take a pasted
+  code. `cancelAuth()` closes the tab.
+- Only the deep-link transport exists: `loopback` is refused.
+- The session is stored in app-private preferences, encrypted with a key held
+  in the Android Keystore.
+- HTTPS uses the bundled Mozilla root certificates, not the system store, so
+  user-installed certificates are not trusted.
+- If Android kills the app while the tab is open, the sign-in in progress is
+  lost; start it again.
+
 **Windows**
 
 - Deep links start a new process unless `tauri-plugin-single-instance` (with
@@ -818,11 +837,11 @@ something or to help.
   is stable.
 - The Tauri 2 line (`0.1.x`) keeps getting security and compatibility fixes.
 
-**Later: Android**
+**Later: mobile out of experimental**
 
-- Wanted, not scheduled. It needs a Keystore session store and the platform
-  hand-off (custom tabs and app links). iOS support is experimental until it
-  has had real-device use.
+- iOS and Android work in the example app on a simulator and an emulator.
+  They stay experimental until they have had real-device use. Android app
+  links (verified `https` callbacks) are not supported yet.
 
 **Not planned** (by design, see [Security](#security)):
 

@@ -1,13 +1,13 @@
-#[cfg(not(target_os = "ios"))]
+#[cfg(desktop)]
 use keyring::{Entry, Error as KeyringError};
-#[cfg(target_os = "ios")]
+#[cfg(mobile)]
 use keyring_core::{api::CredentialStoreApi, Entry, Error as KeyringError};
 
 use super::{SessionStore, StoreError, StoredSecret};
 
 /// Stores the secret in the OS credential store: macOS Keychain, iOS Keychain,
-/// Windows Credential Manager, or the Secret Service (GNOME Keyring, KWallet)
-/// on Linux.
+/// Android Keystore, Windows Credential Manager, or the Secret Service (GNOME
+/// Keyring, KWallet) on Linux.
 ///
 /// The plugin creates one by default with the app identifier as `service` and
 /// `better-auth:{client_id}@{origin}` as `account`, so a development backend
@@ -30,7 +30,7 @@ impl KeyringStore {
         }
     }
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(desktop)]
     fn entry(&self) -> Result<Entry, StoreError> {
         Entry::new(&self.service, &self.account).map_err(map_error)
     }
@@ -40,6 +40,15 @@ impl KeyringStore {
     #[cfg(target_os = "ios")]
     fn entry(&self) -> Result<Entry, StoreError> {
         apple_native_keyring_store::protected::Store::new()
+            .and_then(|store| store.build(&self.service, &self.account, None))
+            .map_err(map_error)
+    }
+
+    /// App-private preferences, encrypted with a key held in the Android
+    /// Keystore.
+    #[cfg(target_os = "android")]
+    fn entry(&self) -> Result<Entry, StoreError> {
+        android_native_keyring_store::Store::new()
             .and_then(|store| store.build(&self.service, &self.account, None))
             .map_err(map_error)
     }
