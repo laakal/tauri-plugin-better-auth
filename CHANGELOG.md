@@ -3,7 +3,7 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
-## 0.2.0-alpha.6 (unreleased, npm tag `next`)
+## 0.2.0-alpha.6 (2026-11-13, npm tag `next`)
 
 Protocol v1, unchanged.
 
