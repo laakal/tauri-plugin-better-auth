@@ -28,6 +28,7 @@ Everything new is opt-in or backward compatible.
 - Docs: the hand-off page section offers the built-in page first, and a
   "Migrating from another package" guide covers `@daveyplate/better-auth-tauri`
   and `@dreamshive/better-auth-tauri`.
+- Tested with Better Auth 1.7.4, 1.7.26 and 1.8.0-beta.10, and Rust 1.100.
 
 ## 0.1.6 (2026-11-13)
 ## 0.2.0-alpha.6 (2026-11-13, npm tag `next`)
