@@ -6,6 +6,7 @@
 set -eu
 sed -i.bak '/examples\/basic\/tauri-app\/src-tauri/d' Cargo.toml && rm Cargo.toml.bak
 cargo update -p tauri --precise 2.11.5
+cargo update -p tauri-runtime-wry --precise 2.11.4
 cargo update -p tauri-runtime --precise 2.11.3
 cargo update -p tauri-macros --precise 2.6.3
 cargo update -p tauri-codegen --precise 2.6.3

@@ -11,15 +11,18 @@ import { parseUserOutput } from 'better-auth/db';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import * as z from 'zod';
 
-import type { ResolvedTauriOptions } from './types';
+import type { ResolvedHandoffPage, ResolvedTauriOptions } from './types';
 
 import { TAURI_ERROR_CODES as ERR } from './error-codes';
+import { handoffPageHeaders, renderHandoffPage } from './handoff-page';
 import {
+  CLIENT_ID_PATTERN,
   CODE_CHALLENGE_PATTERN,
   CODE_IDENTIFIER_PREFIX,
   CODE_PATTERN,
   CODE_VERIFIER_PATTERN,
   PROTOCOL_VERSION,
+  PROVIDER_PATTERN,
   STATE_PATTERN,
 } from './protocol';
 
@@ -104,7 +107,11 @@ export const createAuthorizeEndpoint = (opts: ResolvedTauriOptions) =>
     async (ctx) => {
       if (opts.authorizeOrigins && ctx.request) {
         const origin = ctx.request.headers.get('origin');
-        if (!origin || !opts.authorizeOrigins.includes(origin)) {
+        // The built-in hand-off page runs on Better Auth's own origin.
+        const ownPage =
+          opts.handoffPage !== undefined &&
+          origin === new URL(ctx.context.baseURL).origin;
+        if (!origin || (!opts.authorizeOrigins.includes(origin) && !ownPage)) {
           throw APIError.from('FORBIDDEN', ERR.ORIGIN_NOT_ALLOWED);
         }
       }
@@ -262,5 +269,61 @@ export const createTokenEndpoint = (opts: ResolvedTauriOptions) =>
           Record<string, unknown>,
         protocol: PROTOCOL_VERSION,
       } satisfies TauriTokenResponse);
+    },
+  );
+
+export const createHandoffPageEndpoint = (
+  page: ResolvedHandoffPage,
+  opts: ResolvedTauriOptions,
+) =>
+  createAuthEndpoint(
+    '/tauri/handoff',
+    {
+      method: 'GET',
+      metadata: {
+        // A browser page, not an API: hidden from the inferred client.
+        scope: 'http',
+        noStore: true,
+        openapi: {
+          operationId: 'tauriHandoffPage',
+          description:
+            'The built-in hand-off page: signs the user in and, after consent, hands a single-use code to the Tauri app.',
+          responses: { 200: { description: 'An HTML page' } },
+        },
+      },
+    },
+    async (ctx) => {
+      const providers = ctx.context.socialProviders
+        .filter((provider) =>
+          page.socialProviders === true
+            ? true
+            : page.socialProviders === false
+              ? false
+              : page.socialProviders.includes(provider.id),
+        )
+        .map((provider) => ({ id: provider.id, name: provider.name }));
+      const nonce = generateRandomString(32, 'a-z', 'A-Z', '0-9');
+      const html = renderHandoffPage(
+        {
+          appName: page.appName,
+          scheme: page.scheme,
+          callbackPath: page.callbackPath,
+          clientID: opts.clientID,
+          protocolVersion: PROTOCOL_VERSION,
+          authBase: new URL(ctx.context.baseURL).pathname.replace(/\/$/, ''),
+          signInURL: page.signInURL,
+          signInCallbackParam: page.signInCallbackParam,
+          providers,
+          requestTTL: 600,
+          patterns: {
+            clientId: CLIENT_ID_PATTERN.source,
+            state: STATE_PATTERN.source,
+            codeChallenge: CODE_CHALLENGE_PATTERN.source,
+            provider: PROVIDER_PATTERN.source,
+          },
+        },
+        nonce,
+      );
+      return new Response(html, { headers: handoffPageHeaders(nonce) });
     },
   );

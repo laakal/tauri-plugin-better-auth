@@ -845,6 +845,83 @@ async fn a_revoked_session_signs_out_and_clears_storage() {
     assert!(h.store.secret().is_none());
 }
 
+// ------------------------------------------------------------ focus recheck
+
+/// Pretends the last session check ran `ago` in the past.
+fn checked_ago(controller: &Controller, ago: Duration) {
+    *controller.last_check.lock().unwrap() = tokio::time::Instant::now().checked_sub(ago);
+}
+
+#[tokio::test]
+async fn a_focus_recheck_signs_out_a_session_revoked_elsewhere() {
+    let h = Harness::new().await;
+    h.sign_in("tok-1", "s1", "u1").await;
+    // Signing in just checked the session: focus has nothing to do yet.
+    assert!(!h.controller.focus_recheck_due());
+
+    // Later, the session is revoked from another device.
+    h.server.reset().await;
+    Mock::given(method("GET"))
+        .and(path("/api/auth/get-session"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(Value::Null))
+        .mount(&h.server)
+        .await;
+    checked_ago(&h.controller, Duration::from_secs(31));
+
+    // What the plugin runs when a window gains focus.
+    assert!(h.controller.focus_recheck_due());
+    assert_eq!(h.controller.session(false).await.unwrap(), None);
+    assert!(h
+        .events
+        .all()
+        .contains(&Ev::SignedOut(SignOutReason::Revoked)));
+}
+
+#[tokio::test]
+async fn focus_rechecks_are_throttled() {
+    let h = Harness::new().await;
+    checked_ago(&h.controller, Duration::from_secs(31));
+    // A burst of focus events starts one check.
+    assert!(h.controller.focus_recheck_due());
+    assert!(!h.controller.focus_recheck_due());
+    assert!(!h.controller.focus_recheck_due());
+    // Any session check counts, not only focus ones.
+    checked_ago(&h.controller, Duration::from_secs(10));
+    assert!(!h.controller.focus_recheck_due());
+}
+
+#[tokio::test]
+async fn focus_rechecks_can_be_turned_off() {
+    let mut config = RawConfig {
+        base_url: Some("http://localhost:3000/api/auth".into()),
+        sign_in_url: Some("http://localhost:3000/desktop".into()),
+        scheme: Some("com.example.app".into()),
+        recheck_on_focus: Some(None),
+        ..RawConfig::default()
+    }
+    .validate()
+    .unwrap();
+    config.pending_ttl = Duration::from_secs(600);
+    let http = HttpApi::new(
+        config.base_url.clone(),
+        Duration::from_secs(2),
+        "Test/1.0",
+        Arc::new(reqwest::header::HeaderMap::new),
+    )
+    .unwrap();
+    let controller = Controller::new(ControllerParts {
+        config: Arc::new(config),
+        http,
+        store: Arc::new(TestStore::default()),
+        profiles: Arc::new(TestProfiles::default()),
+        events: Arc::new(Events::default()),
+        opener: Arc::new(Opener::default()),
+        deep_links_deliverable: true,
+        app_name: "Test".into(),
+    });
+    assert!(!controller.focus_recheck_due());
+}
+
 #[tokio::test]
 async fn an_unreachable_server_keeps_the_cached_session() {
     let h = Harness::new().await;

@@ -9,11 +9,65 @@ import {
   authenticate,
   cancelAuth,
   getSession,
+  isTauriAuthError,
   requestAuth,
   signOut,
 } from './commands';
 import { onAuthenticated, onSignedOut } from './events';
 import { tauriFetch } from './fetch';
+
+/** A browser sign-in started with `signIn.social()` (not an ID-token sign-in). */
+async function socialProvider(request: Request): Promise<string | null> {
+  if (
+    request.method !== 'POST' ||
+    !new URL(request.url).pathname.endsWith('/sign-in/social')
+  ) {
+    return null;
+  }
+  const body = (await request
+    .clone()
+    .json()
+    .catch(() => null)) as { provider?: unknown; idToken?: unknown } | null;
+  if (!body || body.idToken !== undefined) return null;
+  return typeof body.provider === 'string' ? body.provider : '';
+}
+
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+/**
+ * The `fetch` that {@link withTauri} gives Better Auth: `tauriFetch`, except
+ * that `authClient.signIn.social({ provider })` starts a browser sign-in with
+ * `requestAuth({ provider })`. The bridge refuses that route, because the
+ * webview must never follow an OAuth redirect.
+ *
+ * `signIn.social()` then resolves once the browser is open, with
+ * `{ url, redirect: false }`; the session arrives with the `authenticated`
+ * event, which refreshes `useSession()`. `callbackURL` and the other redirect
+ * options are ignored: the app stays where it is.
+ */
+export const tauriAuthFetch: typeof fetch = async (input, init) => {
+  const request = new Request(input, init);
+  const provider = await socialProvider(request);
+  if (provider === null) return tauriFetch(request);
+  try {
+    const result = await requestAuth(provider ? { provider } : {});
+    return json(200, {
+      url: result.url,
+      redirect: false,
+      opened: result.opened,
+      transport: result.transport,
+    });
+  } catch (error) {
+    const code = isTauriAuthError(error) ? error.code : 'REQUEST_AUTH_FAILED';
+    const message = error instanceof Error ? error.message : String(error);
+    return json(code === 'INVALID_REQUEST' ? 400 : 500, { code, message });
+  }
+};
 
 /**
  * Better Auth client plugin for the Tauri webview. Refreshes `useSession()`
@@ -57,7 +111,7 @@ export type WithTauri<O extends BetterAuthClientOptions> = Omit<
 > & {
   plugins: [...PluginsOf<O>, ReturnType<typeof tauriClient>];
   fetchOptions: Omit<NonNullable<O['fetchOptions']>, 'customFetchImpl'> & {
-    customFetchImpl: typeof tauriFetch;
+    customFetchImpl: typeof tauriAuthFetch;
   };
   disableDefaultFetchPlugins: true;
 };
@@ -69,8 +123,9 @@ export type WithTauri<O extends BetterAuthClientOptions> = Omit<
  * - every request goes through the Rust bridge (`tauriFetch`): the token is
  *   added in Rust and never reaches the page;
  * - Better Auth's redirect plugin is disabled, so no response can navigate
- *   the webview away from the app (start social sign-in with
- *   `authClient.tauri.requestAuth({ provider })` instead);
+ *   the webview away from the app;
+ * - `authClient.signIn.social({ provider })` opens the system browser, like
+ *   `authClient.tauri.requestAuth({ provider })` (see {@link tauriAuthFetch});
  * - `useSession()` refreshes after browser sign-ins and sign-outs.
  *
  * @example
@@ -90,7 +145,7 @@ export function withTauri<O extends BetterAuthClientOptions>(
   return {
     ...options,
     disableDefaultFetchPlugins: true,
-    fetchOptions: { ...options.fetchOptions, customFetchImpl: tauriFetch },
+    fetchOptions: { ...options.fetchOptions, customFetchImpl: tauriAuthFetch },
     plugins: [...(options.plugins ?? []), tauriClient()],
   } as unknown as WithTauri<O>;
 }

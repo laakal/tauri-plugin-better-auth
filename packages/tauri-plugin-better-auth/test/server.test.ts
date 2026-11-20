@@ -403,3 +403,121 @@ describe('plugin options', () => {
     ).toEqual(['https://example.com']);
   });
 });
+
+describe('GET /tauri/handoff (built-in hand-off page)', () => {
+  const page = { appName: 'Example', scheme: 'com.example.app' };
+  const social = {
+    socialProviders: {
+      github: { clientId: 'gh-id', clientSecret: 'gh-secret' },
+      google: { clientId: 'g-id', clientSecret: 'g-secret' },
+    },
+  };
+
+  /** The JSON config embedded in the page. */
+  async function pageConfig(res: Response) {
+    const html = await res.text();
+    const json =
+      /<script type="application\/json" id="tpba-config">(.*?)<\/script>/s.exec(
+        html,
+      )?.[1];
+    return { html, config: JSON.parse(json ?? 'null') };
+  }
+
+  it('is not served unless enabled', async () => {
+    const t = await setup();
+    const res = await t.call('/tauri/handoff');
+    expect(res.status).toBe(404);
+  });
+
+  it('serves the page with a nonce CSP, no framing and no caching', async () => {
+    const t = await setup({}, { handoffPage: page });
+    const res = await t.call('/tauri/handoff');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+    const csp = res.headers.get('content-security-policy') ?? '';
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("connect-src 'self'");
+    const nonce = /script-src 'nonce-([A-Za-z0-9]+)'/.exec(csp)?.[1];
+    expect(nonce).toMatch(/^[A-Za-z0-9]{32}$/);
+
+    const { html, config } = await pageConfig(res);
+    expect(html).toContain(`<script nonce="${nonce}">`);
+    expect(config).toMatchObject({
+      appName: 'Example',
+      scheme: 'com.example.app',
+      callbackPath: '/auth/callback',
+      clientID: CLIENT_ID,
+      authBase: '/api/auth',
+    });
+
+    // A fresh nonce per response.
+    const again = await t.call('/tauri/handoff');
+    expect(again.headers.get('content-security-policy')).not.toBe(csp);
+  });
+
+  it('escapes the app name in HTML and in the embedded JSON', async () => {
+    const t = await setup(
+      {},
+      { handoffPage: { ...page, appName: '</script><b>x</b>' } },
+    );
+    const { html, config } = await pageConfig(await t.call('/tauri/handoff'));
+    expect(html).toContain(
+      '<title>Sign in to &lt;/script&gt;&lt;b&gt;x&lt;/b&gt;</title>',
+    );
+    expect(html.match(/<\/script>/g)).toHaveLength(2);
+    expect(config.appName).toBe('</script><b>x</b>');
+  });
+
+  it.each([
+    [true, ['github', 'google']],
+    [['google'], ['google']],
+    [false, []],
+  ])('offers socialProviders %j', async (socialProviders, ids) => {
+    const t = await setup(social, {
+      handoffPage: { ...page, socialProviders },
+    });
+    const { config } = await pageConfig(await t.call('/tauri/handoff'));
+    expect(config.providers.map((p: { id: string }) => p.id)).toEqual(ids);
+    expect(config.providers[0]?.name ?? 'none').not.toBe('');
+  });
+
+  it('lets its own origin authorize next to authorizeOrigins', async () => {
+    const body = () => ({
+      client_id: CLIENT_ID,
+      state: newState(),
+      code_challenge: pkce().challenge,
+    });
+    const own = { headers: { origin: 'http://localhost:3000' } };
+
+    const withPage = await setup(
+      {},
+      { authorizeOrigins: ['https://www.example.com'], handoffPage: page },
+    );
+    expect((await withPage.authorize(body(), own)).status).toBe(200);
+    const foreign = await withPage.authorize(body(), {
+      headers: { origin: 'https://docs.example.com' },
+    });
+    expect(foreign.status).toBe(403);
+
+    const withoutPage = await setup(
+      {},
+      { authorizeOrigins: ['https://www.example.com'] },
+    );
+    expect((await withoutPage.authorize(body(), own)).status).toBe(403);
+  });
+
+  it.each([
+    [{ appName: '', scheme: 'com.example.app' }],
+    [{ appName: 'Example', scheme: 'https' }],
+    [{ ...page, callbackPath: '../x' }],
+    [{ ...page, signInURL: 'javascript:alert(1)' }],
+    [{ ...page, signInURL: '/relative' }],
+    [{ ...page, signInCallbackParam: 'a b' }],
+    [{ ...page, socialProviders: ['Not Valid'] }],
+  ])('rejects handoffPage %j at startup', (handoffPage) => {
+    expect(() => tauri({ handoffPage })).toThrow();
+  });
+});

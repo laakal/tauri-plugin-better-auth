@@ -59,7 +59,7 @@ use std::{marker::PhantomData, path::PathBuf, sync::Arc, time::Duration};
 use serde_json::Value;
 use tauri::{
     plugin::{Builder as PluginBuilder, TauriPlugin},
-    AppHandle, Emitter, Listener, Manager, Runtime,
+    AppHandle, Emitter, Listener, Manager, RunEvent, Runtime, WindowEvent,
 };
 
 use crate::{
@@ -231,6 +231,15 @@ impl<R: Runtime> Builder<R> {
     /// [`Builder::stream_idle_timeout`] for the body.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.raw.timeout = Some(timeout);
+        self
+    }
+
+    /// Re-checks the session with the server when a window gains focus, at
+    /// most once per `interval` (30 seconds by default; 5 seconds to 60
+    /// minutes). A session revoked elsewhere, such as from another device,
+    /// then ends as soon as the user returns to the app. `None` turns it off.
+    pub fn recheck_on_focus(mut self, interval: Option<Duration>) -> Self {
+        self.raw.recheck_on_focus = Some(interval);
         self
     }
 
@@ -423,7 +432,30 @@ impl<R: Runtime> Builder<R> {
                 });
                 Ok(())
             })
+            .on_event(recheck_on_focus::<R>)
             .build()
+    }
+}
+
+/// Re-checks the session when a window gains focus, at most once per
+/// `recheck_on_focus`. A revoked session signs out and emits `signed-out`;
+/// an unreachable server keeps the cached session.
+fn recheck_on_focus<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
+    let RunEvent::WindowEvent {
+        event: WindowEvent::Focused(true),
+        ..
+    } = event
+    else {
+        return;
+    };
+    let Some(auth) = app.try_state::<BetterAuth<R>>() else {
+        return;
+    };
+    let controller = auth.controller.clone();
+    if controller.focus_recheck_due() {
+        tauri::async_runtime::spawn(async move {
+            let _ = controller.session(false).await;
+        });
     }
 }
 

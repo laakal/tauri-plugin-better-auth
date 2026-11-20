@@ -3,6 +3,34 @@
 All notable changes to the npm package and the crate, which share a version.
 Wire protocol versions are tracked in [PROTOCOL.md](PROTOCOL.md).
 
+## 0.1.7 (unreleased)
+
+Protocol v1, unchanged. Everything new is opt-in or backward compatible.
+
+- **Built-in hand-off page.** `tauri({ handoffPage: { appName, scheme } })`
+  serves a ready-made consent page at `GET /tauri/handoff`, so an app no longer
+  has to build one with `tauriProxyClient`. Signed-in users see "Continue to
+  <app>"; signed-out users get a button per social provider and, with
+  `signInURL`, a link to your own sign-in page. `requestAuth({ provider })`
+  starts that provider directly. The page sends a nonce CSP, cannot be framed,
+  is never cached, and its own origin may always call `/tauri/authorize`.
+- **Session re-check on window focus.** When a window gains focus, the Rust
+  plugin re-checks the session with the server, at most every 30 seconds, so a
+  session revoked on another device ends as soon as the user returns.
+  `Builder::recheck_on_focus(Some(interval))` changes the interval (5 s to
+  60 min); `recheck_on_focus(None)` turns it off.
+- **`signIn.social()` in the webview.** With `withTauri`,
+  `authClient.signIn.social({ provider })` opens the system browser like
+  `requestAuth({ provider })` and resolves with `{ url, redirect: false }`.
+  `asTauriClient` keeps `signIn.social` in the types. New export:
+  `tauriAuthFetch`, the `fetch` that `withTauri` installs.
+- Docs: the hand-off page section offers the built-in page first, and a
+  "Migrating from another package" guide covers `@daveyplate/better-auth-tauri`
+  and `@dreamshive/better-auth-tauri`.
+- CI: `scripts/pin-oldest-tauri.sh` also pins `tauri-runtime-wry` (2.11.4).
+  Since `tauri-runtime-wry` 2.12.3 the script stopped early, and the MSRV job
+  built Tauri's 2.12 build crates, which need Rust 1.90.
+
 ## 0.1.6 (2026-11-13)
 
 Protocol v1, unchanged.

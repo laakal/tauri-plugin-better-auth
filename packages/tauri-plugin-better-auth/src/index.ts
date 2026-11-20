@@ -1,15 +1,82 @@
 import type { BetterAuthPlugin } from 'better-auth';
 
-import type { ResolvedTauriOptions, TauriOptions } from './types';
+import type {
+  ResolvedHandoffPage,
+  ResolvedTauriOptions,
+  TauriHandoffPageOptions,
+  TauriOptions,
+} from './types';
 
 import { TAURI_ERROR_CODES } from './error-codes';
 import {
   assertClientId,
+  assertScheme,
+  DEFAULT_CALLBACK_PATH,
   DEFAULT_CLIENT_ID,
+  normalizeCallbackPath,
+  PROVIDER_PATTERN,
   TauriConfigError,
 } from './protocol';
-import { createAuthorizeEndpoint, createTokenEndpoint } from './routes';
+import {
+  createAuthorizeEndpoint,
+  createHandoffPageEndpoint,
+  createTokenEndpoint,
+} from './routes';
 import { VERSION } from './version';
+
+function resolveHandoffPage(
+  page: TauriHandoffPageOptions,
+): ResolvedHandoffPage {
+  const appName = page.appName?.trim() ?? '';
+  if (!appName || appName.length > 100) {
+    throw new TauriConfigError(
+      'handoffPage.appName must be 1–100 characters, e.g. "Example".',
+    );
+  }
+  const providers = page.socialProviders ?? true;
+  if (Array.isArray(providers)) {
+    for (const id of providers) {
+      if (!PROVIDER_PATTERN.test(id)) {
+        throw new TauriConfigError(
+          `handoffPage.socialProviders entry "${id}" is not a provider id such as "github".`,
+        );
+      }
+    }
+  }
+  let signInURL: string | null = null;
+  if (page.signInURL !== undefined) {
+    let parsed: URL;
+    try {
+      parsed = new URL(page.signInURL);
+    } catch {
+      throw new TauriConfigError(
+        `handoffPage.signInURL "${page.signInURL}" is not an absolute URL.`,
+      );
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new TauriConfigError(
+        `handoffPage.signInURL "${page.signInURL}" must be an http(s) URL.`,
+      );
+    }
+    signInURL = parsed.toString();
+  }
+  const signInCallbackParam = page.signInCallbackParam ?? 'callbackURL';
+  if (!/^[A-Za-z0-9_.-]{1,64}$/.test(signInCallbackParam)) {
+    throw new TauriConfigError(
+      `handoffPage.signInCallbackParam "${signInCallbackParam}" is not a query parameter name.`,
+    );
+  }
+  return {
+    appName,
+    scheme: assertScheme(page.scheme),
+    callbackPath: normalizeCallbackPath(
+      page.callbackPath ?? DEFAULT_CALLBACK_PATH,
+    ),
+    socialProviders: providers,
+    signInURL,
+    signInCallbackParam,
+  };
+}
 
 function resolveOptions(options: TauriOptions = {}): ResolvedTauriOptions {
   const clientID = assertClientId(options.clientID ?? DEFAULT_CLIENT_ID);
@@ -47,6 +114,9 @@ function resolveOptions(options: TauriOptions = {}): ResolvedTauriOptions {
     codeExpiresIn,
     authorizeOrigins,
     rateLimit: options.rateLimit ?? { window: 60, max: 10 },
+    handoffPage: options.handoffPage
+      ? resolveHandoffPage(options.handoffPage)
+      : undefined,
   };
 }
 
@@ -64,6 +134,9 @@ interface InitContext {
  *   user; returns a single-use code bound to the app's PKCE challenge.
  * - `POST /tauri/token`: called by the app's Rust plugin; exchanges the code
  *   and PKCE verifier for a new session created in the app's own request.
+ *
+ * With `handoffPage`, also serves a ready-made hand-off page at
+ * `GET /tauri/handoff`.
  *
  * Pair it with the `bearer()` plugin: the app authenticates with
  * `Authorization: Bearer`, never with cookies.
@@ -87,6 +160,9 @@ export const tauri = (options?: TauriOptions) => {
   const endpoints = {
     tauriAuthorize: createAuthorizeEndpoint(opts),
     tauriToken: createTokenEndpoint(opts),
+    ...(opts.handoffPage
+      ? { tauriHandoffPage: createHandoffPageEndpoint(opts.handoffPage, opts) }
+      : {}),
   };
   const isTauriPath = (path: string): boolean =>
     path === '/tauri/authorize' || path === '/tauri/token';
@@ -138,5 +214,10 @@ export {
   isValidScheme,
 } from './protocol';
 export type { TauriTokenResponse } from './routes';
-export type { ResolvedTauriOptions, TauriOptions } from './types';
+export type {
+  ResolvedHandoffPage,
+  ResolvedTauriOptions,
+  TauriHandoffPageOptions,
+  TauriOptions,
+} from './types';
 export { VERSION } from './version';

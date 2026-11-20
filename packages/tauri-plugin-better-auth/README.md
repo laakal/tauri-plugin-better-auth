@@ -18,11 +18,11 @@ Full documentation:
 npm install tauri-plugin-better-auth
 ```
 
-| Import                            | Where                   | What                                                                  |
-| --------------------------------- | ----------------------- | --------------------------------------------------------------------- |
-| `tauri-plugin-better-auth`        | Your Better Auth server | `tauri()` server plugin: `/tauri/authorize`, `/tauri/token`           |
-| `tauri-plugin-better-auth/proxy`  | Your hand-off web page  | `tauriProxyClient()`: request capture, consent hand-off, cancel       |
-| `tauri-plugin-better-auth/client` | The Tauri webview       | `withTauri()`, `tauriFetch`, `requestAuth()`, events, tokenless types |
+| Import                            | Where                   | What                                                                                                |
+| --------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------- |
+| `tauri-plugin-better-auth`        | Your Better Auth server | `tauri()` server plugin: `/tauri/authorize`, `/tauri/token`, and an optional built-in hand-off page |
+| `tauri-plugin-better-auth/proxy`  | Your hand-off web page  | `tauriProxyClient()`: request capture, consent hand-off, cancel                                     |
+| `tauri-plugin-better-auth/client` | The Tauri webview       | `withTauri()`, `tauriFetch`, `requestAuth()`, events, tokenless types                               |
 
 ```ts
 // Server
@@ -33,7 +33,9 @@ betterAuth({
     bearer(),
     tauri({
       clientID: 'com.example.app',
-      authorizeOrigins: ['https://example.com'],
+      // A ready-made consent page at /api/auth/tauri/handoff: no web page to
+      // build. Point the Rust plugin's sign_in_url at it.
+      handoffPage: { appName: 'Example', scheme: 'com.example.app' },
     }),
   ],
 });
@@ -48,7 +50,7 @@ import {
 const authClient = asTauriClient(
   createAuthClient(withTauri({ baseURL: 'https://api.example.com/api/auth' })),
 );
-await requestAuth();
+await requestAuth(); // or: await authClient.signIn.social({ provider: 'github' })
 ```
 
 ## Streaming
