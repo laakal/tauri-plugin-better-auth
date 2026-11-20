@@ -34,7 +34,8 @@ export type Checks = [
   // In-app sign-in: only what the bridge allows.
   Expect<Equal<Has<typeof client.signIn, 'email'>, true>>,
   Expect<Equal<Has<typeof client.signIn, 'emailOtp'>, true>>,
-  Expect<Equal<Has<typeof client.signIn, 'social'>, false>>,
+  // Social sign-in stays: withTauri routes it to a browser sign-in.
+  Expect<Equal<Has<typeof client.signIn, 'social'>, true>>,
   // Credential-reading actions are gone.
   Expect<Equal<Has<typeof client, 'listSessions'>, false>>,
   Expect<Equal<Has<typeof client, 'revokeSessions'>, false>>,

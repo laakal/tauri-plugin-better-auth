@@ -7,6 +7,7 @@ impl Controller {
     pub async fn sign_in(&self, token: String, generation: u64) -> Result<SessionSnapshot> {
         // 1. Verify outside the lock. A host hook may have deleted the session
         //    after creating it; never store a dead token.
+        self.note_check();
         let data = match self.http.get_session(&token).await {
             SessionCheck::Valid(data) => data,
             SessionCheck::Revoked => return Err(Error::SessionRejected),
@@ -180,6 +181,7 @@ impl Controller {
         if cached_only && has_profile {
             return Ok(Some(current.snapshot(false)));
         }
+        self.note_check();
         match self.http.get_session(&current.secret.token).await {
             SessionCheck::Valid(data) => Ok(Some(self.refresh(&current, generation, data).await)),
             SessionCheck::Revoked => {
@@ -196,6 +198,30 @@ impl Controller {
                     Ok(None)
                 }
             }
+        }
+    }
+
+    /// Whether a window gaining focus should check the session now: focus
+    /// rechecks are on and no check ran within `recheck_on_focus`. Saying yes
+    /// claims the slot, so a burst of focus events starts one check.
+    pub fn focus_recheck_due(&self) -> bool {
+        let Some(interval) = self.config.recheck_on_focus else {
+            return false;
+        };
+        let Ok(mut last) = self.last_check.lock() else {
+            return false;
+        };
+        let now = tokio::time::Instant::now();
+        if last.is_some_and(|at| now.saturating_duration_since(at) < interval) {
+            return false;
+        }
+        *last = Some(now);
+        true
+    }
+
+    fn note_check(&self) {
+        if let Ok(mut last) = self.last_check.lock() {
+            *last = Some(tokio::time::Instant::now());
         }
     }
 

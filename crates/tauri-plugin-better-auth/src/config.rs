@@ -93,6 +93,8 @@ pub(crate) struct RawConfig {
     pub pending_ttl: Option<Duration>,
     pub timeout: Option<Duration>,
     pub stream_idle_timeout: Option<Duration>,
+    /// `Some(None)` turns focus rechecks off; `None` keeps the default.
+    pub recheck_on_focus: Option<Option<Duration>>,
     pub main_window: Option<String>,
 }
 
@@ -112,6 +114,8 @@ pub(crate) struct Config {
     pub timeout: Duration,
     /// Longest gap between two chunks of a streamed response.
     pub stream_idle_timeout: Duration,
+    /// Least time between two session checks started by window focus.
+    pub recheck_on_focus: Option<Duration>,
     pub main_window: String,
 }
 
@@ -186,26 +190,32 @@ impl RawConfig {
             ));
         }
 
-        let pending_ttl = self.pending_ttl.unwrap_or(Duration::from_secs(600));
-        if pending_ttl < Duration::from_secs(60) || pending_ttl > Duration::from_secs(3600) {
-            return Err(Error::Config(
-                "pending_ttl must be between 1 and 60 minutes".into(),
-            ));
-        }
-        let timeout = self.timeout.unwrap_or(Duration::from_secs(15));
-        if timeout < Duration::from_secs(1) || timeout > Duration::from_secs(120) {
-            return Err(Error::Config(
-                "timeout must be between 1 and 120 seconds".into(),
-            ));
-        }
-        let stream_idle_timeout = self.stream_idle_timeout.unwrap_or(Duration::from_secs(60));
-        if stream_idle_timeout < Duration::from_secs(1)
-            || stream_idle_timeout > Duration::from_secs(3600)
-        {
-            return Err(Error::Config(
-                "stream_idle_timeout must be between 1 second and 60 minutes".into(),
-            ));
-        }
+        let pending_ttl = bounded(
+            self.pending_ttl.unwrap_or(Duration::from_secs(600)),
+            (60, 3600),
+            "pending_ttl must be between 1 and 60 minutes",
+        )?;
+        let timeout = bounded(
+            self.timeout.unwrap_or(Duration::from_secs(15)),
+            (1, 120),
+            "timeout must be between 1 and 120 seconds",
+        )?;
+        let stream_idle_timeout = bounded(
+            self.stream_idle_timeout.unwrap_or(Duration::from_secs(60)),
+            (1, 3600),
+            "stream_idle_timeout must be between 1 second and 60 minutes",
+        )?;
+        let recheck_on_focus = self
+            .recheck_on_focus
+            .unwrap_or(Some(Duration::from_secs(30)))
+            .map(|interval| {
+                bounded(
+                    interval,
+                    (5, 3600),
+                    "recheck_on_focus must be between 5 seconds and 60 minutes, or None",
+                )
+            })
+            .transpose()?;
 
         Ok(Config {
             base_url,
@@ -219,9 +229,18 @@ impl RawConfig {
             pending_ttl,
             timeout,
             stream_idle_timeout,
+            recheck_on_focus,
             main_window: self.main_window.unwrap_or_else(|| "main".into()),
         })
     }
+}
+
+/// `value` if it lies within `seconds` (inclusive), else a config error.
+fn bounded(value: Duration, seconds: (u64, u64), message: &str) -> Result<Duration> {
+    if value < Duration::from_secs(seconds.0) || value > Duration::from_secs(seconds.1) {
+        return Err(Error::Config(message.into()));
+    }
+    Ok(value)
 }
 
 fn validate_api_routes(routes: Vec<(String, Vec<String>)>) -> Result<Vec<ApiRoute>> {
@@ -582,6 +601,22 @@ mod tests {
         let mut config = raw();
         config.timeout = Some(Duration::from_secs(600));
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn bounds_the_focus_recheck() {
+        assert_eq!(
+            raw().validate().unwrap().recheck_on_focus,
+            Some(Duration::from_secs(30))
+        );
+        let mut config = raw();
+        config.recheck_on_focus = Some(None);
+        assert_eq!(config.validate().unwrap().recheck_on_focus, None);
+        for invalid in [Duration::from_secs(4), Duration::from_secs(3601)] {
+            let mut config = raw();
+            config.recheck_on_focus = Some(Some(invalid));
+            assert!(config.validate().is_err());
+        }
     }
 
     #[test]

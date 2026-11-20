@@ -54,6 +54,9 @@ tauri::Builder::default()
       .stream_idle_timeout(std::time::Duration::from_secs(300))
   ```
 
+- **Fresh sessions:** when a window gains focus, the session is re-checked with
+  the server (at most every 30 s; `recheck_on_focus`), so a session revoked on
+  another device ends as soon as the user returns.
 - **Rust API:** `app.better_auth()` gives `request_auth`, `authenticate`,
   `session`, `sign_out` and `bearer_token`.
 

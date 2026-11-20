@@ -9,6 +9,7 @@ import {
   onAuthenticated,
   onSignedOut,
   requestAuth,
+  tauriAuthFetch,
   tauriFetch,
   TauriAuthError,
   withTauri,
@@ -323,9 +324,66 @@ describe('withTauri', () => {
   it('routes Better Auth through the bridge with redirects disabled', () => {
     const options = withTauri({ baseURL, fetchOptions: { timeout: 5000 } });
     expect(options.disableDefaultFetchPlugins).toBe(true);
-    expect(options.fetchOptions.customFetchImpl).toBe(tauriFetch);
+    expect(options.fetchOptions.customFetchImpl).toBe(tauriAuthFetch);
     expect(options.fetchOptions).toMatchObject({ timeout: 5000 });
     expect(options.plugins.map((p) => p.id)).toEqual(['tauri']);
+  });
+
+  it('turns signIn.social() into a browser sign-in', async () => {
+    mock((cmd) =>
+      cmd === 'plugin:better-auth|request_auth'
+        ? {
+            url: 'https://example.com/desktop?state=s',
+            opened: true,
+            transport: 'loopback',
+          }
+        : null,
+    );
+    const before = window.location.href;
+    const client = createAuthClient(withTauri({ baseURL }));
+    const { data, error } = await client.signIn.social({
+      provider: 'github',
+      callbackURL: '/dashboard',
+    });
+    expect(error).toBeNull();
+    expect(data).toMatchObject({
+      url: 'https://example.com/desktop?state=s',
+      redirect: false,
+    });
+    expect(calls).toEqual([
+      {
+        cmd: 'plugin:better-auth|request_auth',
+        payload: { options: { provider: 'github' } },
+      },
+    ]);
+    // Nothing reached the bridge, and the webview stayed put.
+    expect(window.location.href).toBe(before);
+  });
+
+  it('reports a browser that would not open as a signIn.social() error', async () => {
+    mock(() => {
+      throw { code: 'OPEN_BROWSER_FAILED', message: 'no browser' };
+    });
+    const client = createAuthClient(withTauri({ baseURL }));
+    const { data, error } = await client.signIn.social({ provider: 'github' });
+    expect(data).toBeNull();
+    expect(error).toMatchObject({ code: 'OPEN_BROWSER_FAILED', status: 500 });
+  });
+
+  it('passes ID-token social sign-in to the bridge, which decides', async () => {
+    mock((cmd) =>
+      cmd === 'plugin:better-auth|fetch_stream'
+        ? bridged(403, { code: 'UNSUPPORTED_AUTH_OPERATION' })
+        : null,
+    );
+    const client = createAuthClient(withTauri({ baseURL }));
+    await client.signIn.social({
+      provider: 'google',
+      idToken: { token: 'id-token' },
+    });
+    expect(calls.map((c) => c.cmd)).toEqual([
+      'plugin:better-auth|fetch_stream',
+    ]);
   });
 
   it('never navigates the webview on { url, redirect: true }', async () => {

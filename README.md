@@ -89,7 +89,7 @@ on purpose.
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Platforms             | macOS, Windows, Linux. iOS and Android are experimental.                                                                                                                                                                                                                            |
 | Streaming             | App API responses stream (SSE, AI SDK `streamText`); auth responses are read whole, since Rust scrubs them. Request bodies are buffered (4 MiB). There is no backpressure: chunks queue in the webview until your code reads them. See [Streaming responses](#streaming-responses). |
-| Sign-in methods       | All of them in the browser (`requestAuth()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                                                                                                                            |
+| Sign-in methods       | All of them in the browser (`requestAuth()`, or `signIn.social()`). In the webview: email + password and email OTP. OAuth redirects, passkeys and 2FA run in the browser only.                                                                                                      |
 | Better Auth endpoints | The webview reaches [eight routes](#the-auth-bridge). Others (a plugin's endpoints, `/change-password`…) need `auth_route(...)`; `/tauri/*` never. By design.                                                                                                                       |
 | API origins           | The bearer token goes only to the origins and path prefixes in `api_routes` (call it once per domain). Any other URL returns `403 FORBIDDEN_URL`. By design.                                                                                                                        |
 | Redirects             | Never followed, so a `307` cannot carry the token elsewhere. Auth responses must be uncompressed JSON. By design.                                                                                                                                                                   |
@@ -147,6 +147,9 @@ Install the npm package wherever you use the server, proxy or webview client:
 ```sh
 npm install tauri-plugin-better-auth
 ```
+
+> **Fastest path:** let the server plugin serve the hand-off page
+> ([option A](#option-a-the-built-in-page)). You then write no web page at all.
 
 > **Keep these values aligned:** use `com.example.app` as the client ID in all
 > three parts below. The scheme must also match the deep-link registration.
@@ -208,6 +211,49 @@ databaseHooks: {
 </details>
 
 ### 2. Hand-off page
+
+The app opens this page in the browser. It signs the user in, asks for consent,
+and hands a single-use code back to the app. Use the built-in page, or build
+your own when you want your site's look and layout.
+
+#### Option A: the built-in page
+
+Turn it on in the server plugin:
+
+```ts
+tauri({
+  clientID: 'com.example.app',
+  authorizeOrigins: ['https://example.com'], // optional with the built-in page
+  handoffPage: {
+    appName: 'Example', // "Continue to Example"
+    scheme: 'com.example.app', // the app's deep-link scheme
+    signInURL: 'https://example.com/login', // optional, see below
+  },
+}),
+```
+
+Then point the app at it: `sign_in_url("https://api.example.com/api/auth/tauri/handoff")`
+(your Better Auth base URL plus `/tauri/handoff`).
+
+What the page does:
+
+- **Signed in:** "Continue to Example? You are signed in as ada@example.com",
+  with **Continue**, **Cancel** and **Use another account**.
+- **Signed out:** a button for each of your `socialProviders` (all of them by
+  default; pick some with `socialProviders: ['github']`, or none with `false`).
+  `requestAuth({ provider: 'github' })` in the app skips the buttons and starts
+  GitHub directly.
+- **Other sign-in methods** (email and password, passkeys, 2FA): set
+  `signInURL` to your sign-in page. The page links there with
+  `?callbackURL=<this page>`; send the user back to that URL once they are
+  signed in. Change the parameter name with `signInCallbackParam`.
+
+The page is served from your Better Auth origin, so it sees the session cookie
+without any CORS setup, and that origin may always call `/tauri/authorize`. It
+sends a strict CSP with a fresh nonce, refuses to be framed (so the consent
+click cannot be hijacked), and is never cached.
+
+#### Option B: your own page
 
 A page on your website, for example `https://example.com/desktop`, that the app
 opens in the browser. It needs the proxy client and one rule: **ask for consent
@@ -364,6 +410,9 @@ export const authClient = asTauriClient(
 // Browser sign-in (any method). Completes with an `authenticated` event.
 await requestAuth(); // or requestAuth({ provider: 'github' })
 
+// The usual Better Auth call works too: it opens the browser the same way.
+await authClient.signIn.social({ provider: 'github' });
+
 // In-app sign-in with an email code: the session lands in Rust.
 await authClient.signIn.emailOtp({ email, otp });
 
@@ -379,11 +428,23 @@ const res = await tauriFetch('https://api.example.com/api/projects');
 - It routes Better Auth through `tauriFetch`.
 - It disables Better Auth's redirect plugin, so no response can navigate the
   webview away.
+- It turns `signIn.social({ provider })` into a browser sign-in
+  (`requestAuth({ provider })`). The call resolves once the browser is open,
+  with `{ url, redirect: false }`; the session arrives with the `authenticated`
+  event. `callbackURL` is ignored: the app stays where it is.
 - It refreshes `useSession()` on sign-in and sign-out events.
 
 **What `asTauriClient` does:** it narrows the types. Sessions have no `token`, and
-actions the bridge refuses (`signIn.social`, `listSessions`, `oneTimeToken`…)
+actions the bridge refuses (`listSessions`, `oneTimeToken`, `linkSocial`…)
 disappear.
+
+**Keeping the session fresh.** When an app window gains focus, Rust re-checks
+the session with the server, at most every 30 seconds. A session revoked from
+another device then ends as soon as the user comes back to the app, with a
+`signed-out` event (`reason: 'revoked'`). Change the interval with
+`recheck_on_focus(Some(Duration::from_secs(60)))`, or turn it off with
+`recheck_on_focus(None)`. Better Auth's own client already refetches when the
+network comes back.
 
 **Plain functions:**
 
@@ -645,8 +706,20 @@ the whole callback link.
 | `codeExpiresIn`    | `300`                     | Seconds, 30–3600                                                                       |
 | `authorizeOrigins` | none                      | Origins allowed to call `/tauri/authorize`. Strongly recommended.                      |
 | `rateLimit`        | `{ window: 60, max: 10 }` | Per IP for both endpoints, or `false`. Enforced when Better Auth's rate limiter is on. |
+| `handoffPage`      | none                      | Serves the built-in hand-off page at `GET /tauri/handoff` (see below).                 |
 
-### Hand-off page: `tauriProxyClient(options)`
+**`handoffPage`:**
+
+| Option                | Default            | Description                                                  |
+| --------------------- | ------------------ | ------------------------------------------------------------ |
+| `appName`             | required           | Shown as "Continue to <appName>"                             |
+| `scheme`              | required           | The app's scheme                                             |
+| `callbackPath`        | `"/auth/callback"` | Must match the app                                           |
+| `socialProviders`     | `true`             | `true` (all configured), a list of provider ids, or `false`  |
+| `signInURL`           | none               | Your sign-in page for other methods; receives the return URL |
+| `signInCallbackParam` | `"callbackURL"`    | Query parameter of `signInURL` that carries the return URL   |
+
+### Your own hand-off page: `tauriProxyClient(options)`
 
 | Option         | Default            | Description                                                               |
 | -------------- | ------------------ | ------------------------------------------------------------------------- |
@@ -677,6 +750,7 @@ the whole callback link.
 | `pending_ttl(d)`                 | 10 min                   | 1–60 min                                                     |
 | `timeout(d)`                     | 15 s                     | Per request; for a streamed response, until its headers      |
 | `stream_idle_timeout(d)`         | 60 s                     | Longest gap between two chunks of a stream; 1 s–60 min       |
+| `recheck_on_focus(interval)`     | `Some(30 s)`             | Re-check the session when a window gains focus; `None` = off |
 | `main_window(label)`             | `"main"`                 | Focused when a sign-in returns                               |
 | `store(impl SessionStore)`       | OS keychain              | `KeyringStore`, `MemoryStore`, or your own (e.g. Stronghold) |
 | `headers(fn)`                    | none                     | Headers sent with every auth/API request (e.g. device id)    |
@@ -818,7 +892,8 @@ the code, never on the message.
 - The authorizing browser session is checked against the database, bypassing
   `cookieCache`.
 - An origin allowlist on authorize.
-- A user click for consent.
+- A user click for consent. The built-in hand-off page cannot be framed, sends
+  a nonce-based CSP and is never cached.
 - Callbacks are matched to the pending state atomically.
 - No redirects.
 - Rust-only configuration.
@@ -838,16 +913,52 @@ code-plus-PKCE idea. This plugin differs in three ways:
   custom scheme never needs to be a trusted origin.
 - It keeps the session in Rust behind a bridge, not in the renderer.
 
-**`@daveyplate/better-auth-tauri`** is a JS-only package. Social sign-in returns
-to the app through a deep link, and the session lives in the webview's JS
-context.
+**`@daveyplate/better-auth-tauri`** and **`@dreamshive/better-auth-tauri`** are
+JS-only packages for social sign-in:
+
+- daveyplate returns the provider's OAuth code to the app through the deep link,
+  and the session lives in `@tauri-apps/plugin-http`'s cookie jar.
+- dreamshive returns the session cookie itself through the deep link
+  (`yourapp://?cookie=…`), and the app stores it in storage you provide.
+
+A custom scheme can be registered by any app on the machine, so whatever the
+deep link carries can be intercepted.
 
 **This plugin:**
 
 - holds the session in Rust, outside the webview
 - uses PKCE-bound single-use codes, so an intercepted deep link is useless
-- supports any sign-in method through your own page
-- gives the webview a token-free request bridge
+- supports any sign-in method, not only social providers
+- gives the webview a token-free request bridge, with streaming
+
+### Migrating from another package
+
+The server, the hand-off page and the app change; your Better Auth
+configuration and providers stay.
+
+1. **Server.** Replace the other plugin with `bearer()` and
+   `tauri({ clientID, handoffPage: { appName, scheme } })`. Remove the custom
+   scheme from `trustedOrigins` if you added it only for the other package: the
+   app never sends cookies.
+2. **Tauri (Rust).** Add the crate and `tauri_plugin_better_auth::Builder` with
+   `base_url`, `sign_in_url` (your base URL plus `/tauri/handoff`), `scheme`,
+   `client_id` and your `api_routes` ([setup](#3-tauri-app)). Keep
+   `tauri-plugin-deep-link` and `tauri-plugin-single-instance`. You no longer
+   need `tauri-plugin-http`, `-opener` or `-shell` for sign-in.
+3. **Webview.** Wrap your client options in `withTauri(...)` and drop the other
+   package's client plugin, `customFetchImpl` and storage adapter.
+   `authClient.signIn.social({ provider })` keeps working: it opens the browser.
+
+| Before                                                       | After                                                 |
+| ------------------------------------------------------------ | ----------------------------------------------------- |
+| daveyplate `setupBetterAuthTauri()` / `useBetterAuthTauri()` | nothing: the Rust plugin handles the deep link        |
+| daveyplate `signInSocial({ authClient, provider })`          | `authClient.signIn.social({ provider })`              |
+| dreamshive `tauriClient({ scheme, storage })`                | `withTauri(...)`: the session is in the OS keychain   |
+| `customFetchImpl: fetch` from `@tauri-apps/plugin-http`      | set by `withTauri`; use `tauriFetch` for your own API |
+| `onSuccess` / `onError` callbacks                            | `onAuthenticated(user)`, `onAuthError(error)`         |
+
+Users sign in once more after the switch: the old sessions live in the other
+package's storage.
 
 ## Example
 

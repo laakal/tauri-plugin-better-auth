@@ -38,8 +38,12 @@ type Restrict<T, K extends string> = T extends object
   ? Pick<T, Extract<keyof T, K>>
   : never;
 
-/** Sign-in methods the bridge accepts by default. */
-export type TauriSignInMethod = 'email' | 'emailOtp';
+/**
+ * Sign-in methods available in the webview: `email` and `emailOtp` through
+ * the bridge, `social` as a browser sign-in (`withTauri` routes it to
+ * `requestAuth({ provider })`).
+ */
+export type TauriSignInMethod = 'email' | 'emailOtp' | 'social';
 
 /**
  * Client actions the bridge refuses: they read or mint credentials, or need
@@ -61,7 +65,7 @@ export type TauriUnsupportedAction =
 
 /**
  * A Better Auth client as seen in the Tauri webview: tokenless sessions,
- * in-app sign-in limited to `email` and `emailOtp` (plus `ExtraSignIn`, for
+ * sign-in limited to `email`, `emailOtp` and `social` (plus `ExtraSignIn`, for
  * routes you allowed in Rust with `Builder::auth_route`).
  */
 export type TauriAuthClient<C, ExtraSignIn extends string = never> = Omit<

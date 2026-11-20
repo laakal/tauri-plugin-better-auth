@@ -120,6 +120,8 @@ pub(crate) struct Controller {
     deep_links_deliverable: bool,
     app_name: String,
     inner: Mutex<Inner>,
+    /// When the session was last checked with the server (focus throttle).
+    last_check: std::sync::Mutex<Option<tokio::time::Instant>>,
 }
 
 pub(crate) struct ControllerParts {
@@ -170,6 +172,7 @@ impl Controller {
             deep_links_deliverable: parts.deep_links_deliverable,
             app_name: parts.app_name,
             inner: Mutex::new(Inner::default()),
+            last_check: std::sync::Mutex::new(None),
         })
     }
 
